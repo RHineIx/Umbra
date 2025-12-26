@@ -19,7 +19,13 @@ class GboardHook {
         private const val PREFS_CACHE = "umbra_gboard_cache"
         private const val KEY_VERSION = "gboard_version"
         private const val KEY_METHOD_CONFIG = "method_read_config"
+        private const val PREFS_TTL_MS = 3000L
     }
+
+    @Volatile private var cachedLimit = Constants.DEFAULT_GBOARD_LIMIT
+    @Volatile private var cachedRetentionMs =
+        Constants.DEFAULT_GBOARD_RETENTION * 24L * 60 * 60 * 1000
+    @Volatile private var lastPrefsRead = 0L
 
     init {
         try {
@@ -28,41 +34,37 @@ class GboardHook {
     }
 
     private fun getPrefs(): XSharedPreferences? {
-    val pref = XSharedPreferences(
-        "com.umbra.hooks",
-        Constants.PREFS_FILE
-    )
-
-    // 🔑 مهم جداً: القراءة من Device Protected Storage
-    pref.makeWorldReadable()
-    pref.reload()
-
-    return if (pref.file.exists() && pref.file.canRead()) {
-        pref
-    } else {
-        XposedBridge.log("$TAG prefs not readable: ${pref.file.absolutePath}")
-        null
+        val pref = XSharedPreferences("com.umbra.hooks", Constants.PREFS_FILE)
+        pref.makeWorldReadable()
+        pref.reload()
+        return if (pref.file.exists() && pref.file.canRead()) pref else null
     }
-}
 
-    private val clipboardLimit: Int
-        get() = getPrefs()
-            ?.getInt(Constants.KEY_GBOARD_LIMIT, Constants.DEFAULT_GBOARD_LIMIT)
-            ?: Constants.DEFAULT_GBOARD_LIMIT
+    private fun getCachedConfig(): Pair<Int, Long> {
+        val now = System.currentTimeMillis()
+        if (now - lastPrefsRead > PREFS_TTL_MS) {
+            try {
+                val prefs = getPrefs()
+                if (prefs != null) {
+                    cachedLimit = prefs.getInt(
+                        Constants.KEY_GBOARD_LIMIT,
+                        Constants.DEFAULT_GBOARD_LIMIT
+                    )
 
-    private val retentionMs: Long
-        get() {
-            val days = getPrefs()
-                ?.getInt(
-                    Constants.KEY_GBOARD_RETENTION_DAYS,
-                    Constants.DEFAULT_GBOARD_RETENTION
-                )
-                ?: Constants.DEFAULT_GBOARD_RETENTION
-            return days * 24L * 60 * 60 * 1000
+                    val days = prefs.getInt(
+                        Constants.KEY_GBOARD_RETENTION_DAYS,
+                        Constants.DEFAULT_GBOARD_RETENTION
+                    )
+
+                    cachedRetentionMs = days * 24L * 60 * 60 * 1000
+                    lastPrefsRead = now
+                }
+            } catch (_: Throwable) {}
         }
+        return cachedLimit to cachedRetentionMs
+    }
 
     fun init(lpparam: XC_LoadPackage.LoadPackageParam) {
-
         XposedHelpers.findAndHookMethod(
             Application::class.java,
             "attach",
@@ -82,7 +84,6 @@ class GboardHook {
     }
 
     private fun hookClipboardProvider(classLoader: ClassLoader) {
-
         val providerClass =
             "com.google.android.apps.inputmethod.libs.clipboard.ClipboardContentProvider"
 
@@ -99,19 +100,18 @@ class GboardHook {
                 object : XC_MethodHook() {
 
                     override fun beforeHookedMethod(param: MethodHookParam) {
-
-                        val limit = clipboardLimit
+                        val (limit, retentionMs) = getCachedConfig()
                         val cutoffTime = System.currentTimeMillis() - retentionMs
 
                         val selection = param.args[2]?.toString() ?: ""
                         val selectionArgs = param.args[3] as? Array<String>
                         val sortOrder = param.args[4]?.toString() ?: ""
 
-                        // ===== Time condition =====
                         if (selection.contains("timestamp >= ?") && selectionArgs != null) {
                             var index = 0
-                            for (i in 0 until selection.indexOf("timestamp >= ?")) {
+                            for (i in selection.indices) {
                                 if (selection[i] == '?') index++
+                                if (i >= selection.indexOf("timestamp >= ?")) break
                             }
                             if (index < selectionArgs.size) {
                                 selectionArgs[index] = cutoffTime.toString()
@@ -119,18 +119,22 @@ class GboardHook {
                             }
                         }
 
-                        // ===== Limit condition =====
-                        if (sortOrder.contains("limit", ignoreCase = true)) {
-                            val newOrder = sortOrder.replace(
-                                Regex("limit\\s+\\d+", RegexOption.IGNORE_CASE),
-                                "limit $limit"
-                            )
-                            param.args[4] = newOrder
+                        val newOrder = when {
+                            sortOrder.contains("limit", ignoreCase = true) -> {
+                                sortOrder.replace(
+                                    Regex("limit\\s+\\d+", RegexOption.IGNORE_CASE),
+                                    "LIMIT $limit"
+                                )
+                            }
+                            sortOrder.isNotBlank() -> {
+                                "$sortOrder LIMIT $limit"
+                            }
+                            else -> {
+                                "LIMIT $limit"
+                            }
                         }
 
-                        XposedBridge.log(
-                            "$TAG limit=$limit retentionMs=$retentionMs file=${getPrefs()?.file?.absolutePath}"
-                        )
+                        param.args[4] = newOrder
                     }
                 }
             )
@@ -139,17 +143,13 @@ class GboardHook {
         }
     }
 
-    /**
-     * 🔧 DexKit logic (كما هو بدون تغيير)
-     */
     private fun setupDynamicHooks(context: Context, classLoader: ClassLoader) {
-
         val cachePrefs = context.getSharedPreferences(PREFS_CACHE, Context.MODE_PRIVATE)
         val versionCode = context.packageManager
             .getPackageInfo(context.packageName, 0).versionCode
 
         val cachedVersion = cachePrefs.getInt(KEY_VERSION, -1)
-        var methodName: String? =
+        var methodName =
             if (versionCode == cachedVersion)
                 cachePrefs.getString(KEY_METHOD_CONFIG, null)
             else null
@@ -159,10 +159,11 @@ class GboardHook {
                 DexKitBridge.create(classLoader, true).use { bridge ->
                     val method = bridge.findMethod {
                         matcher {
-                            usingStrings("Invalid flag: ")
+                            usingStrings("Invalid flag:")
                             returnType("java.lang.Object")
+                            paramCount(1)
                         }
-                    }.singleOrNull()
+                    }.firstOrNull()
 
                     if (method != null) {
                         methodName = method.toDexMethod().serialize()
