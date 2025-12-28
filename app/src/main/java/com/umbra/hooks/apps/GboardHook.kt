@@ -3,6 +3,7 @@ package com.umbra.hooks.apps
 import android.app.Application
 import android.content.Context
 import android.net.Uri
+import com.umbra.hooks.core.AppHook
 import com.umbra.hooks.utils.Constants
 import de.robv.android.xposed.XC_MethodHook
 import de.robv.android.xposed.XSharedPreferences
@@ -12,7 +13,7 @@ import de.robv.android.xposed.callbacks.XC_LoadPackage
 import org.luckypray.dexkit.DexKitBridge
 import org.luckypray.dexkit.wrap.DexMethod
 
-class GboardHook {
+class GboardHook : AppHook {
 
     companion object {
         private const val TAG = "[UMBRA-GBOARD]"
@@ -20,24 +21,55 @@ class GboardHook {
         private const val KEY_VERSION = "gboard_version"
         private const val KEY_METHOD_CONFIG = "method_read_config"
         private const val PREFS_TTL_MS = 3000L
+
+        // OPTIMIZATION: Compile Regex once and reuse it globally.
+        // Prevents CPU churn during every clipboard query.
+        private val LIMIT_REGEX = Regex("limit\\s+\\d+", RegexOption.IGNORE_CASE)
+
+        // Keep a single instance to avoid repetitive object allocation
+        private var prefsInstance: XSharedPreferences? = null
     }
 
-    @Volatile private var cachedLimit = Constants.DEFAULT_GBOARD_LIMIT
-    @Volatile private var cachedRetentionMs =
-        Constants.DEFAULT_GBOARD_RETENTION * 24L * 60 * 60 * 1000
-    @Volatile private var lastPrefsRead = 0L
+    override val targetPackages = setOf(
+        "com.google.android.inputmethod.latin"
+    )
+
+    override fun isEnabled(prefs: XSharedPreferences): Boolean {
+        return prefs.getBoolean(Constants.KEY_GBOARD_ENABLED, true)
+    }
+
+    @Volatile
+    private var cachedLimit = Constants.DEFAULT_GBOARD_LIMIT
+
+    @Volatile
+    private var cachedRetentionMs = Constants.DEFAULT_GBOARD_RETENTION * 24L * 60 * 60 * 1000
+
+    @Volatile
+    private var lastPrefsRead = 0L
 
     init {
         try {
             System.loadLibrary("dexkit")
-        } catch (_: Throwable) {}
+        } catch (_: Throwable) {
+        }
+    }
+
+    override fun onLoad(lpparam: XC_LoadPackage.LoadPackageParam) {
+        init(lpparam)
     }
 
     private fun getPrefs(): XSharedPreferences? {
-        val pref = XSharedPreferences("com.umbra.hooks", Constants.PREFS_FILE)
-        pref.makeWorldReadable()
-        pref.reload()
-        return if (pref.file.exists() && pref.file.canRead()) pref else null
+        // Recycle the existing instance, just reload content
+        if (prefsInstance == null) {
+            prefsInstance = XSharedPreferences("com.umbra.hooks", Constants.PREFS_FILE).apply {
+                makeWorldReadable()
+            }
+        } else {
+            prefsInstance?.reload()
+        }
+        
+        val p = prefsInstance
+        return if (p != null && p.file.exists() && p.file.canRead()) p else null
     }
 
     private fun getCachedConfig(): Pair<Int, Long> {
@@ -59,12 +91,13 @@ class GboardHook {
                     cachedRetentionMs = days * 24L * 60 * 60 * 1000
                     lastPrefsRead = now
                 }
-            } catch (_: Throwable) {}
+            } catch (_: Throwable) {
+            }
         }
         return cachedLimit to cachedRetentionMs
     }
 
-    fun init(lpparam: XC_LoadPackage.LoadPackageParam) {
+    private fun init(lpparam: XC_LoadPackage.LoadPackageParam) {
         XposedHelpers.findAndHookMethod(
             Application::class.java,
             "attach",
@@ -72,9 +105,11 @@ class GboardHook {
             object : XC_MethodHook() {
                 override fun afterHookedMethod(param: MethodHookParam) {
                     try {
+                        val context = param.args[0] as Context
                         val classLoader = lpparam.classLoader
+                        
                         hookClipboardProvider(classLoader)
-                        setupDynamicHooks(param.args[0] as Context, classLoader)
+                        setupDynamicHooks(context, classLoader)
                     } catch (t: Throwable) {
                         XposedBridge.log("$TAG attach error: $t")
                     }
@@ -84,8 +119,7 @@ class GboardHook {
     }
 
     private fun hookClipboardProvider(classLoader: ClassLoader) {
-        val providerClass =
-            "com.google.android.apps.inputmethod.libs.clipboard.ClipboardContentProvider"
+        val providerClass = "com.google.android.apps.inputmethod.libs.clipboard.ClipboardContentProvider"
 
         try {
             XposedHelpers.findAndHookMethod(
@@ -107,28 +141,36 @@ class GboardHook {
                         val selectionArgs = param.args[3] as? Array<String>
                         val sortOrder = param.args[4]?.toString() ?: ""
 
+                        // Inject timestamp filter if query asks for it
                         if (selection.contains("timestamp >= ?") && selectionArgs != null) {
                             var index = 0
-                            for (i in selection.indices) {
-                                if (selection[i] == '?') index++
-                                if (i >= selection.indexOf("timestamp >= ?")) break
-                            }
-                            if (index < selectionArgs.size) {
-                                selectionArgs[index] = cutoffTime.toString()
-                                param.args[3] = selectionArgs
+                            // Optimized loop: Locate the '?' corresponding to timestamp
+                            val targetPhrase = "timestamp >= ?"
+                            val phraseIndex = selection.indexOf(targetPhrase)
+                            
+                            if (phraseIndex != -1) {
+                                for (i in 0 until phraseIndex) {
+                                    if (selection[i] == '?') index++
+                                }
+                                
+                                if (index < selectionArgs.size) {
+                                    selectionArgs[index] = cutoffTime.toString()
+                                    param.args[3] = selectionArgs
+                                }
                             }
                         }
 
+                        // SQL Injection for LIMIT
                         val newOrder = when {
                             sortOrder.contains("limit", ignoreCase = true) -> {
-                                sortOrder.replace(
-                                    Regex("limit\\s+\\d+", RegexOption.IGNORE_CASE),
-                                    "LIMIT $limit"
-                                )
+                                // Use the pre-compiled regex
+                                sortOrder.replace(LIMIT_REGEX, "LIMIT $limit")
                             }
+
                             sortOrder.isNotBlank() -> {
                                 "$sortOrder LIMIT $limit"
                             }
+
                             else -> {
                                 "LIMIT $limit"
                             }
@@ -144,18 +186,27 @@ class GboardHook {
     }
 
     private fun setupDynamicHooks(context: Context, classLoader: ClassLoader) {
+        // Use local val for prefs to prevent Context leak in closure
         val cachePrefs = context.getSharedPreferences(PREFS_CACHE, Context.MODE_PRIVATE)
-        val versionCode = context.packageManager
-            .getPackageInfo(context.packageName, 0).versionCode
+        
+        val versionCode = try {
+            context.packageManager.getPackageInfo(context.packageName, 0).versionCode
+        } catch (e: Exception) {
+            -1
+        }
 
         val cachedVersion = cachePrefs.getInt(KEY_VERSION, -1)
-        var methodName =
-            if (versionCode == cachedVersion)
-                cachePrefs.getString(KEY_METHOD_CONFIG, null)
-            else null
+        var methodName = if (versionCode == cachedVersion) {
+            cachePrefs.getString(KEY_METHOD_CONFIG, null)
+        } else {
+            null
+        }
 
+        // If not cached or version changed, run DexKit
         if (methodName == null) {
             try {
+                // "use" block ensures DexKitBridge is closed immediately after search
+                // preventing native memory leaks
                 DexKitBridge.create(classLoader, true).use { bridge ->
                     val method = bridge.findMethod {
                         matcher {
@@ -173,7 +224,9 @@ class GboardHook {
                             .apply()
                     }
                 }
-            } catch (_: Throwable) {}
+            } catch (_: Throwable) {
+                // Fail silently, don't crash Gboard
+            }
         }
 
         if (methodName != null) {
@@ -185,10 +238,11 @@ class GboardHook {
                     dexMethod.name,
                     object : XC_MethodHook() {
                         override fun beforeHookedMethod(param: MethodHookParam) {
-                            val name =
+                            val name = try {
                                 XposedHelpers.getObjectField(param.thisObject, "a").toString()
-                            if (
-                                name == "enable_clipboard_entity_extraction" ||
+                            } catch (e: Exception) { "" }
+
+                            if (name == "enable_clipboard_entity_extraction" ||
                                 name == "enable_clipboard_query_refactoring"
                             ) {
                                 param.result = false
@@ -197,6 +251,7 @@ class GboardHook {
                     }
                 )
             } catch (_: Throwable) {
+                // If hook fails (e.g. method signature changed), clear cache
                 cachePrefs.edit().remove(KEY_METHOD_CONFIG).apply()
             }
         }
