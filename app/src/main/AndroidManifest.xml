@@ -46,6 +46,11 @@
             android:name=".GboardActivity"
             android:exported="false" />
 
+        <activity
+            android:name=".PydroidActivity"
+            android:exported="false" />
+
+
     </application>
 
 </manifest>

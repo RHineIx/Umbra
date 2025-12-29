@@ -2,6 +2,7 @@ package com.umbra.hooks
 
 import com.umbra.hooks.apps.GboardHook
 import com.umbra.hooks.apps.PinterestHook
+import com.umbra.hooks.apps.PydroidHook
 import com.umbra.hooks.core.AppHook
 import com.umbra.hooks.utils.Constants
 import de.robv.android.xposed.IXposedHookLoadPackage
@@ -15,7 +16,8 @@ class MainHook : IXposedHookLoadPackage {
 
     private val hooks: List<AppHook> = listOf(
         GboardHook(),
-        PinterestHook()
+        PinterestHook(),
+        PydroidHook()
     )
 
     override fun handleLoadPackage(lpparam: XC_LoadPackage.LoadPackageParam) {

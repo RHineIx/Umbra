@@ -25,6 +25,10 @@ class MainActivity : AppCompatActivity() {
         findViewById<ImageView>(R.id.imgAbout).setOnClickListener {
             showAboutDialog()
         }
+        
+        findViewById<com.google.android.material.card.MaterialCardView>(R.id.cardPydroid).setOnClickListener {
+            startActivity(Intent(this, PydroidActivity::class.java))
+        }
 
         updateUI()
     }

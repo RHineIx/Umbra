@@ -15,4 +15,12 @@ object Constants {
     // Defaults
     const val DEFAULT_GBOARD_LIMIT = 20
     const val DEFAULT_GBOARD_RETENTION = 3 // Days
+    
+    // Pydroid Keys
+    const val KEY_PYDROID_ENABLED = "pydroid_enabled"
+    const val KEY_PYDROID_PREMIUM = "pydroid_premium"
+    const val KEY_PYDROID_NO_ADS = "pydroid_no_ads"
+    const val KEY_PYDROID_NO_JUMP = "pydroid_no_jump"
 }
+
+
