@@ -11,8 +11,8 @@ android {
         applicationId = "com.umbra.hooks"
         minSdk = 26
         targetSdk = 34
-        versionCode = 4
-        versionName = "2.3"
+        versionCode = 37
+        versionName = "3.7"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         
