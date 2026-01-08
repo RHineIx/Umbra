@@ -1,7 +1,6 @@
 package com.umbra.hooks
 
 import com.umbra.hooks.apps.GboardHook
-import com.umbra.hooks.apps.PinterestHook
 import com.umbra.hooks.apps.PydroidHook
 import com.umbra.hooks.core.AppHook
 import com.umbra.hooks.utils.Constants
@@ -16,12 +15,10 @@ class MainHook : IXposedHookLoadPackage {
 
     private val hooks: List<AppHook> = listOf(
         GboardHook(),
-        PinterestHook(),
         PydroidHook()
     )
 
     override fun handleLoadPackage(lpparam: XC_LoadPackage.LoadPackageParam) {
-        
         // 1. Self-Hook for Activation Check
         // This allows the MainActivity to know if the module is actually running
         if (lpparam.packageName == "com.umbra.hooks") {

@@ -76,9 +76,7 @@
                     android:layout_height="wrap_content"
                     android:minHeight="48dp"
                     android:text="Enable Premium Features"
-                    android:textColor="?attr/colorOnSurface"
-                    app:thumbTint="?attr/colorOnPrimary"
-                    app:trackTint="?attr/colorPrimary" />
+                    android:textColor="?attr/colorOnSurface" />
 
                 <TextView
                     android:layout_width="match_parent"
