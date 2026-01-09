@@ -1,6 +1,5 @@
 package com.umbra.hooks
 
-import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import android.os.Bundle
@@ -15,6 +14,7 @@ import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import com.umbra.hooks.utils.Constants
+import com.umbra.hooks.utils.PrefsManager
 
 class GboardActivity : AppCompatActivity() {
 
@@ -44,41 +44,25 @@ class GboardActivity : AppCompatActivity() {
     private fun showGboardHookInfoDialog() {
         val infoText = """
             <b>Gboard Hook</b><br><br>
-            Extends Gboard clipboard limits and improves retention behavior.<br><br>
-            <b>Credits:</b><br>
-            Based on the original work from:<br>
-            <a href="https://github.com/chenyue404/GboardHook">chenyue404 / GboardHook</a><br><br>
-            Further enhanced and refined in <b>Umbra</b>.
+            Configure clipboard limits.<br><br>
+            Credits: chenyue404 / Umbra Team.
         """.trimIndent()
-
         val dialog = MaterialAlertDialogBuilder(this)
             .setTitle("GboardHook Info")
             .setMessage(Html.fromHtml(infoText, Html.FROM_HTML_MODE_COMPACT))
             .setCancelable(true)
             .create()
-
         dialog.show()
-
         (dialog.findViewById<TextView>(android.R.id.message))?.movementMethod =
             LinkMovementMethod.getInstance()
     }
 
     private fun loadSettings() {
-        @Suppress("DEPRECATION")
-        val prefs = getSharedPreferences(Constants.PREFS_FILE, Context.MODE_WORLD_READABLE)
-
         etLimit.setText(
-            prefs.getInt(
-                Constants.KEY_GBOARD_LIMIT,
-                Constants.DEFAULT_GBOARD_LIMIT
-            ).toString()
+            PrefsManager.getLocalInt(this, Constants.KEY_GBOARD_LIMIT, Constants.DEFAULT_GBOARD_LIMIT).toString()
         )
-
         etRetention.setText(
-            prefs.getInt(
-                Constants.KEY_GBOARD_RETENTION_DAYS,
-                Constants.DEFAULT_GBOARD_RETENTION
-            ).toString()
+            PrefsManager.getLocalInt(this, Constants.KEY_GBOARD_RETENTION_DAYS, Constants.DEFAULT_GBOARD_RETENTION).toString()
         )
     }
 
@@ -87,21 +71,14 @@ class GboardActivity : AppCompatActivity() {
             val limit = etLimit.text.toString().toIntOrNull() ?: 50
             val retention = etRetention.text.toString().toIntOrNull() ?: 30
 
-            @Suppress("DEPRECATION")
-            val prefs = getSharedPreferences(Constants.PREFS_FILE, Context.MODE_WORLD_READABLE)
-
-            prefs.edit()
-                .putInt(Constants.KEY_GBOARD_LIMIT, limit)
-                .putInt(Constants.KEY_GBOARD_RETENTION_DAYS, retention)
-                .apply()
-
-            Toast.makeText(this, "Settings saved. Force stop the keyboard app to apply changes.", Toast.LENGTH_SHORT).show()
-
+            PrefsManager.putInt(this, Constants.KEY_GBOARD_LIMIT, limit)
+            PrefsManager.putInt(this, Constants.KEY_GBOARD_RETENTION_DAYS, retention)
+            
+            Toast.makeText(this, "Settings saved. Force stop Gboard.", Toast.LENGTH_SHORT).show()
             val imePkg = getCurrentImePackage() ?: "com.google.android.inputmethod.latin"
             openAppInfo(imePkg)
-
         } catch (e: Exception) {
-            Toast.makeText(this, "Invalid input.", Toast.LENGTH_SHORT).show()
+            Toast.makeText(this, "Error: ${e.message}", Toast.LENGTH_SHORT).show()
         }
     }
 

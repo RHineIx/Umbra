@@ -109,9 +109,8 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_marginBottom="16dp"
-            android:clickable="true"
-            android:focusable="true"
-            android:foreground="?android:attr/selectableItemBackground"
+            android:clickable="false"
+            android:focusable="false"
             app:cardBackgroundColor="?attr/colorSurface"
             app:cardCornerRadius="20dp"
             app:cardElevation="2dp">
@@ -141,10 +140,10 @@
                         android:layout_height="wrap_content"
                         android:paddingHorizontal="14dp"
                         android:paddingVertical="6dp"
-                        android:text="CONFIG"
+                        android:text="ENABLED"
                         android:textAppearance="?attr/textAppearanceLabelMedium"
-                        android:textColor="?attr/colorOnPrimaryContainer"
-                        android:backgroundTint="?attr/colorPrimaryContainer"
+                        android:textColor="?attr/colorOnSecondaryContainer"
+                        android:backgroundTint="?attr/colorSecondaryContainer"
                         android:background="@drawable/bg_chip" />
                 </LinearLayout>
 

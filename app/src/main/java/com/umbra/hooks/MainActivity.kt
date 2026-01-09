@@ -18,16 +18,16 @@ class MainActivity : AppCompatActivity() {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
 
+        // Only Gboard has configuration now
         findViewById<MaterialCardView>(R.id.cardGboard).setOnClickListener {
             startActivity(Intent(this, GboardActivity::class.java))
         }
 
+        // Pydroid card is informational only (Always Enabled)
+        // No OnClickListener needed
+
         findViewById<ImageView>(R.id.imgAbout).setOnClickListener {
             showAboutDialog()
-        }
-        
-        findViewById<com.google.android.material.card.MaterialCardView>(R.id.cardPydroid).setOnClickListener {
-            startActivity(Intent(this, PydroidActivity::class.java))
         }
 
         updateUI()
@@ -40,8 +40,8 @@ class MainActivity : AppCompatActivity() {
 
     private fun showAboutDialog() {
         val aboutText = """
-            <b>Umbra v3.0</b><br><br>
-            simple module<br><br>
+            <b>Umbra v3.1</b><br><br>
+            Production Release<br><br>
             <b>Developer: </b>
             <a href="https://t.me/RHineix">@RHineIx</a>
         """.trimIndent()
@@ -70,10 +70,8 @@ class MainActivity : AppCompatActivity() {
         val tvDesc = findViewById<TextView>(R.id.tvStatusDesc)
 
         if (isActive) {
-            val colorContainer =
-                getThemeColor(com.google.android.material.R.attr.colorPrimaryContainer)
-            val colorOnContainer =
-                getThemeColor(com.google.android.material.R.attr.colorOnPrimaryContainer)
+            val colorContainer = getThemeColor(com.google.android.material.R.attr.colorPrimaryContainer)
+            val colorOnContainer = getThemeColor(com.google.android.material.R.attr.colorOnPrimaryContainer)
 
             cardStatus.setCardBackgroundColor(colorContainer)
             imgStatus.imageTintList = ColorStateList.valueOf(colorOnContainer)
@@ -82,10 +80,8 @@ class MainActivity : AppCompatActivity() {
             tvTitle.text = "Module Activated"
             tvDesc.text = "Umbra is running properly."
         } else {
-            val colorContainer =
-                getThemeColor(com.google.android.material.R.attr.colorErrorContainer)
-            val colorOnContainer =
-                getThemeColor(com.google.android.material.R.attr.colorOnErrorContainer)
+            val colorContainer = getThemeColor(com.google.android.material.R.attr.colorErrorContainer)
+            val colorOnContainer = getThemeColor(com.google.android.material.R.attr.colorOnErrorContainer)
 
             cardStatus.setCardBackgroundColor(colorContainer)
             imgStatus.imageTintList = ColorStateList.valueOf(colorOnContainer)
