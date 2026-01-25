@@ -13,14 +13,18 @@ android {
         targetSdk = 34
         versionCode = 37
         versionName = "3.7"
-
-        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         
+        
+        ndk {
+            abiFilters.add("arm64-v8a")
+            abiFilters.add("armeabi-v7a")
+        }
     }
 
     buildTypes {
         release {
             isMinifyEnabled = true
+            isShrinkResources = true 
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
@@ -39,17 +43,20 @@ android {
     
     buildFeatures {
         viewBinding = true
-        dataBinding = true
+        dataBinding = false
     }
 
     packaging {
+        resources {
+            excludes += "META-INF/**"
+            excludes += "**/attach_hotagent.dll" // Cleanup common java waste
+            excludes += "LICENSE.txt"
+        }
         jniLibs {
             useLegacyPackaging = false 
-            excludes += "META-INF/**"
         }
     }
 }
-
 dependencies {
     implementation("androidx.core:core-ktx:1.13.1")
     implementation("androidx.appcompat:appcompat:1.7.1")
