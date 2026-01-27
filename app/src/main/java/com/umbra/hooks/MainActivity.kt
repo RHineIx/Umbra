@@ -18,13 +18,9 @@ class MainActivity : AppCompatActivity() {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
 
-        // Only Gboard has configuration now
         findViewById<MaterialCardView>(R.id.cardGboard).setOnClickListener {
             startActivity(Intent(this, GboardActivity::class.java))
         }
-
-        // Pydroid card is informational only (Always Enabled)
-        // No OnClickListener needed
 
         findViewById<ImageView>(R.id.imgAbout).setOnClickListener {
             showAboutDialog()
@@ -39,8 +35,14 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun showAboutDialog() {
+        val versionName = try {
+            packageManager.getPackageInfo(packageName, 0).versionName
+        } catch (e: Exception) {
+            "3.7"
+        }
+
         val aboutText = """
-            <b>Umbra v3.1</b><br><br>
+            <b>Umbra v$versionName</b><br><br>
             Production Release<br><br>
             <b>Developer: </b>
             <a href="https://t.me/RHineix">@RHineIx</a>
@@ -92,7 +94,6 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    // Hooked by MainHook when the module is active
     private fun isModuleActive(): Boolean {
         return false
     }

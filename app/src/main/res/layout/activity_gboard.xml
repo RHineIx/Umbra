@@ -64,8 +64,7 @@
                 android:id="@+id/etLimit"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:inputType="number"
-                android:text="50" />
+                android:inputType="number" />
         </com.google.android.material.textfield.TextInputLayout>
 
         <com.google.android.material.textfield.TextInputLayout
@@ -78,20 +77,24 @@
                 android:id="@+id/etRetention"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:inputType="number"
-                android:text="30" />
+                android:inputType="number" />
         </com.google.android.material.textfield.TextInputLayout>
 
+        <com.google.android.material.materialswitch.MaterialSwitch
+            android:id="@+id/swLogs"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginBottom="32dp"
+            android:text="Enable Module Logs"
+            android:textAppearance="?attr/textAppearanceBodyLarge" />
+
         <com.google.android.material.button.MaterialButton
-    android:id="@+id/btnSave"
-    android:layout_width="match_parent"
-    android:layout_height="56dp"
-    android:text="Save Configuration"
-    android:textAllCaps="false"
-    app:cornerRadius="16dp"
-    app:backgroundTint="?attr/colorSecondaryContainer"
-    android:textColor="?attr/colorOnSecondaryContainer"
-    app:rippleColor="?attr/colorOnSecondaryContainer"/>
+            android:id="@+id/btnSave"
+            android:layout_width="match_parent"
+            android:layout_height="56dp"
+            android:text="Save Configuration"
+            android:textAllCaps="false"
+            app:cornerRadius="16dp" />
 
     </LinearLayout>
 </ScrollView>
