@@ -58,8 +58,7 @@
             android:id="@+id/cardStatus"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginBottom="24dp"
-            app:cardBackgroundColor="?attr/colorPrimaryContainer"
+            android:layout_marginBottom="16dp"
             app:cardCornerRadius="20dp"
             app:cardElevation="0dp">
 
@@ -74,8 +73,7 @@
                     android:id="@+id/imgStatus"
                     android:layout_width="24dp"
                     android:layout_height="24dp"
-                    android:src="@drawable/ic_info_outline"
-                    app:tint="?attr/colorOnPrimaryContainer" />
+                    android:src="@drawable/ic_info_outline" />
 
                 <LinearLayout
                     android:layout_width="match_parent"
@@ -87,9 +85,7 @@
                         android:id="@+id/tvStatusTitle"
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
-                        android:text="Module Activated"
                         android:textAppearance="?attr/textAppearanceTitleMedium"
-                        android:textColor="?attr/colorOnPrimaryContainer"
                         android:textStyle="bold" />
 
                     <TextView
@@ -97,10 +93,71 @@
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
                         android:layout_marginTop="4dp"
-                        android:text="Umbra is running properly."
-                        android:textAppearance="?attr/textAppearanceBodyMedium"
-                        android:textColor="?attr/colorOnPrimaryContainer" />
+                        android:textAppearance="?attr/textAppearanceBodyMedium" />
                 </LinearLayout>
+            </LinearLayout>
+        </com.google.android.material.card.MaterialCardView>
+
+        <com.google.android.material.card.MaterialCardView
+            android:id="@+id/cardUpdate"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginBottom="16dp"
+            android:clickable="true"
+            android:focusable="true"
+            android:foreground="?android:attr/selectableItemBackground"
+            android:visibility="gone"
+            app:cardBackgroundColor="?attr/colorSurface"
+            app:cardCornerRadius="20dp"
+            app:cardElevation="2dp">
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:gravity="center_vertical"
+                android:orientation="horizontal"
+                android:padding="20dp">
+
+                <ImageView
+                    android:layout_width="24dp"
+                    android:layout_height="24dp"
+                    android:src="@drawable/update_rounded"
+                    app:tint="?attr/colorPrimary" />
+
+                <LinearLayout
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_marginStart="16dp"
+                    android:layout_weight="1"
+                    android:orientation="vertical">
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="Update Available"
+                        android:textAppearance="?attr/textAppearanceTitleMedium"
+                        android:textColor="?attr/colorPrimary"
+                        android:textStyle="bold" />
+
+                    <TextView
+                        android:id="@+id/tvUpdateDesc"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="2dp"
+                        android:textAppearance="?attr/textAppearanceBodySmall"
+                        android:textColor="?attr/colorOnSurfaceVariant" />
+                </LinearLayout>
+
+                <ImageView
+                    android:id="@+id/btnDismissUpdate"
+                    android:layout_width="32dp"
+                    android:layout_height="32dp"
+                    android:background="?attr/selectableItemBackgroundBorderless"
+                    android:clickable="true"
+                    android:focusable="true"
+                    android:padding="4dp"
+                    android:src="@android:drawable/ic_menu_close_clear_cancel"
+                    app:tint="?attr/colorOnSurfaceVariant" />
             </LinearLayout>
         </com.google.android.material.card.MaterialCardView>
 
@@ -109,8 +166,6 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_marginBottom="16dp"
-            android:clickable="false"
-            android:focusable="false"
             app:cardBackgroundColor="?attr/colorSurface"
             app:cardCornerRadius="20dp"
             app:cardElevation="2dp">
@@ -132,19 +187,18 @@
                         android:layout_height="wrap_content"
                         android:layout_weight="1"
                         android:text="Pydroid 3"
-                        android:textAppearance="?attr/textAppearanceTitleLarge"
-                        android:textColor="?attr/colorOnSurface" />
+                        android:textAppearance="?attr/textAppearanceTitleLarge" />
 
                     <TextView
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
+                        android:background="@drawable/bg_chip"
+                        android:backgroundTint="?attr/colorSecondaryContainer"
                         android:paddingHorizontal="14dp"
                         android:paddingVertical="6dp"
                         android:text="ENABLED"
                         android:textAppearance="?attr/textAppearanceLabelMedium"
-                        android:textColor="?attr/colorOnSecondaryContainer"
-                        android:backgroundTint="?attr/colorSecondaryContainer"
-                        android:background="@drawable/bg_chip" />
+                        android:textColor="?attr/colorOnSecondaryContainer" />
                 </LinearLayout>
 
                 <TextView
@@ -186,19 +240,18 @@
                         android:layout_height="wrap_content"
                         android:layout_weight="1"
                         android:text="Gboard Clipboard"
-                        android:textAppearance="?attr/textAppearanceTitleLarge"
-                        android:textColor="?attr/colorOnSurface" />
+                        android:textAppearance="?attr/textAppearanceTitleLarge" />
 
                     <TextView
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
+                        android:background="@drawable/bg_chip"
+                        android:backgroundTint="?attr/colorPrimaryContainer"
                         android:paddingHorizontal="14dp"
                         android:paddingVertical="6dp"
                         android:text="CONFIG"
                         android:textAppearance="?attr/textAppearanceLabelMedium"
-                        android:textColor="?attr/colorOnPrimaryContainer"
-                        android:backgroundTint="?attr/colorPrimaryContainer"
-                        android:background="@drawable/bg_chip" />
+                        android:textColor="?attr/colorOnPrimaryContainer" />
                 </LinearLayout>
 
                 <TextView

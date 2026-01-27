@@ -2,15 +2,20 @@ package com.umbra.hooks
 
 import android.content.Intent
 import android.content.res.ColorStateList
+import android.net.Uri
 import android.os.Bundle
 import android.text.Html
 import android.text.method.LinkMovementMethod
 import android.util.TypedValue
+import android.view.View
 import android.widget.ImageView
 import android.widget.TextView
 import androidx.appcompat.app.AppCompatActivity
+import androidx.lifecycle.lifecycleScope
 import com.google.android.material.card.MaterialCardView
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
+import com.umbra.hooks.utils.UpdateUtils
+import kotlinx.coroutines.launch
 
 class MainActivity : AppCompatActivity() {
 
@@ -26,7 +31,33 @@ class MainActivity : AppCompatActivity() {
             showAboutDialog()
         }
 
+        findViewById<MaterialCardView>(R.id.cardUpdate).setOnClickListener {
+            startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://github.com/RHineIx/Umbra/releases")))
+        }
+
+        findViewById<ImageView>(R.id.btnDismissUpdate).setOnClickListener {
+            findViewById<MaterialCardView>(R.id.cardUpdate).visibility = View.GONE
+        }
+
         updateUI()
+        checkForUpdates()
+    }
+
+    private fun checkForUpdates() {
+        val currentVersion = try {
+            packageManager.getPackageInfo(packageName, 0).versionName
+        } catch (_: Exception) { "0" }
+
+        lifecycleScope.launch {
+            val latestTag = UpdateUtils.checkUpdate()
+            if (latestTag != null) {
+                val latestVersion = latestTag.replace("v", "")
+                if (latestVersion > currentVersion) {
+                    findViewById<TextView>(R.id.tvUpdateDesc).text = "New release $latestTag is ready for download."
+                    findViewById<MaterialCardView>(R.id.cardUpdate).visibility = View.VISIBLE
+                }
+            }
+        }
     }
 
     override fun onResume() {
@@ -37,9 +68,7 @@ class MainActivity : AppCompatActivity() {
     private fun showAboutDialog() {
         val versionName = try {
             packageManager.getPackageInfo(packageName, 0).versionName
-        } catch (e: Exception) {
-            "3.7"
-        }
+        } catch (_: Exception) { "4.0.0" }
 
         val aboutText = """
             <b>Umbra v$versionName</b><br><br>
@@ -55,17 +84,11 @@ class MainActivity : AppCompatActivity() {
             .create()
 
         dialog.show()
-
-        (dialog.findViewById<TextView>(android.R.id.message))?.movementMethod =
-            LinkMovementMethod.getInstance()
+        dialog.findViewById<TextView>(android.R.id.message)?.movementMethod = LinkMovementMethod.getInstance()
     }
 
     private fun updateUI() {
-        val isModuleActive = isModuleActive()
-        updateGlobalStatus(isModuleActive)
-    }
-
-    private fun updateGlobalStatus(isActive: Boolean) {
+        val isActive = isModuleActive()
         val cardStatus = findViewById<MaterialCardView>(R.id.cardStatus)
         val imgStatus = findViewById<ImageView>(R.id.imgStatus)
         val tvTitle = findViewById<TextView>(R.id.tvStatusTitle)
@@ -74,7 +97,6 @@ class MainActivity : AppCompatActivity() {
         if (isActive) {
             val colorContainer = getThemeColor(com.google.android.material.R.attr.colorPrimaryContainer)
             val colorOnContainer = getThemeColor(com.google.android.material.R.attr.colorOnPrimaryContainer)
-
             cardStatus.setCardBackgroundColor(colorContainer)
             imgStatus.imageTintList = ColorStateList.valueOf(colorOnContainer)
             tvTitle.setTextColor(colorOnContainer)
@@ -84,7 +106,6 @@ class MainActivity : AppCompatActivity() {
         } else {
             val colorContainer = getThemeColor(com.google.android.material.R.attr.colorErrorContainer)
             val colorOnContainer = getThemeColor(com.google.android.material.R.attr.colorOnErrorContainer)
-
             cardStatus.setCardBackgroundColor(colorContainer)
             imgStatus.imageTintList = ColorStateList.valueOf(colorOnContainer)
             tvTitle.setTextColor(colorOnContainer)
@@ -94,9 +115,7 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    private fun isModuleActive(): Boolean {
-        return false
-    }
+    private fun isModuleActive(): Boolean = false
 
     private fun getThemeColor(attr: Int): Int {
         val value = TypedValue()

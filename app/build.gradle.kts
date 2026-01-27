@@ -11,7 +11,7 @@ android {
         applicationId = "com.umbra.hooks"
         minSdk = 26
         targetSdk = 34
-        versionCode = 40
+        versionCode = 400
         versionName = "4.0.0"
         
         
