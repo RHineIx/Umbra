@@ -1,10 +1,11 @@
 [versions]
-agp = "8.3.0" 
+agp = "8.3.0"
 kotlin = "1.9.23"
 coreKtx = "1.13.1"
 appcompat = "1.6.1"
 material = "1.12.0"
 constraintlayout = "2.1.4"
+dexkit = "2.0.7"
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }
@@ -15,3 +16,5 @@ androidx-core-ktx = { group = "androidx.core", name = "core-ktx", version.ref = 
 androidx-appcompat = { group = "androidx.appcompat", name = "appcompat", version.ref = "appcompat" }
 material = { group = "com.google.android.material", name = "material", version.ref = "material" }
 androidx-constraintlayout = { group = "androidx.constraintlayout", name = "constraintlayout", version.ref = "constraintlayout" }
+# DexKit Dependency
+dexkit = { group = "org.luckypray", name = "dexkit", version.ref = "dexkit" }

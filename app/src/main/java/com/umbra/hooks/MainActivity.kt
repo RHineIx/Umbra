@@ -1,8 +1,10 @@
 package com.umbra.hooks
 
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.content.res.ColorStateList
 import android.net.Uri
+import android.os.Build
 import android.os.Bundle
 import android.text.Html
 import android.text.method.LinkMovementMethod
@@ -44,15 +46,23 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun checkForUpdates() {
-        val currentVersion = try {
-            packageManager.getPackageInfo(packageName, 0).versionName
+        val currentCode = try {
+            val pInfo = packageManager.getPackageInfo(packageName, 0)
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+                pInfo.longVersionCode.toString()
+            } else {
+                @Suppress("DEPRECATION")
+                pInfo.versionCode.toString()
+            }
         } catch (_: Exception) { "0" }
 
         lifecycleScope.launch {
-            val latestTag = UpdateUtils.checkUpdate()
+            val latestTag = UpdateUtils.checkUpdate() // سيجلب "v400"
+            
             if (latestTag != null) {
-                val latestVersion = latestTag.replace("v", "")
-                if (latestVersion > currentVersion) {
+                // المقارنة الآن ستكون بين "400" (المحلي) و "400" (القادم من v400)
+                // النتيجة ستكون متطابقة ولن يظهر التحديث
+                if (UpdateUtils.isNewer(currentCode, latestTag)) {
                     findViewById<TextView>(R.id.tvUpdateDesc).text = "New release $latestTag is ready for download."
                     findViewById<MaterialCardView>(R.id.cardUpdate).visibility = View.VISIBLE
                 }

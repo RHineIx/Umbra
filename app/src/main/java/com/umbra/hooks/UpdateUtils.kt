@@ -24,4 +24,25 @@ object UpdateUtils {
         } catch (_: Exception) {}
         null
     }
+
+    // دالة المقارنة الذكية
+    fun isNewer(current: String, latest: String): Boolean {
+        // تنظيف النصوص من الحروف والمسافات والإبقاء على الأرقام والنقاط فقط
+        val cleanCurrent = current.replace(Regex("[^0-9.]"), "")
+        val cleanLatest = latest.replace(Regex("[^0-9.]"), "")
+
+        val currentParts = cleanCurrent.split(".").map { it.toIntOrNull() ?: 0 }
+        val latestParts = cleanLatest.split(".").map { it.toIntOrNull() ?: 0 }
+
+        val length = maxOf(currentParts.size, latestParts.size)
+
+        for (i in 0 until length) {
+            val v1 = if (i < currentParts.size) currentParts[i] else 0
+            val v2 = if (i < latestParts.size) latestParts[i] else 0
+
+            if (v2 > v1) return true  // التحديث أحدث
+            if (v2 < v1) return false // الإصدار الحالي أحدث أو يساويه
+        }
+        return false // الإصداران متطابقان تماماً
+    }
 }

@@ -11,10 +11,10 @@ android {
         applicationId = "com.umbra.hooks"
         minSdk = 26
         targetSdk = 34
-        versionCode = 400
-        versionName = "4.0.0"
         
-        
+        versionCode = 20000
+        versionName = "2.0.0"
+
         ndk {
             abiFilters.add("arm64-v8a")
         }
@@ -23,7 +23,7 @@ android {
     buildTypes {
         release {
             isMinifyEnabled = true
-            isShrinkResources = true 
+            isShrinkResources = true
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
@@ -48,7 +48,7 @@ android {
     packaging {
         resources {
             excludes += "META-INF/**"
-            excludes += "**/attach_hotagent.dll" // Cleanup common java waste
+            excludes += "**/attach_hotagent.dll"
             excludes += "LICENSE.txt"
         }
         jniLibs {
@@ -56,6 +56,7 @@ android {
         }
     }
 }
+
 dependencies {
     implementation("androidx.core:core-ktx:1.13.1")
     implementation("androidx.appcompat:appcompat:1.7.1")
@@ -64,5 +65,6 @@ dependencies {
    
     compileOnly("de.robv.android.xposed:api:82")
 
-    implementation("org.luckypray:dexkit:2.0.7")
+    // DexKit (Managed via Version Catalog)
+    implementation(libs.dexkit)
 }
