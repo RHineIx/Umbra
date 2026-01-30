@@ -13,7 +13,6 @@ import android.widget.TextView
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
-import com.google.android.material.materialswitch.MaterialSwitch
 import com.umbra.hooks.utils.Constants
 import com.umbra.hooks.utils.PrefsManager
 
@@ -21,7 +20,6 @@ class GboardActivity : AppCompatActivity() {
 
     private lateinit var etLimit: EditText
     private lateinit var etRetention: EditText
-    private lateinit var swLogs: MaterialSwitch
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -29,7 +27,6 @@ class GboardActivity : AppCompatActivity() {
 
         etLimit = findViewById(R.id.etLimit)
         etRetention = findViewById(R.id.etRetention)
-        swLogs = findViewById(R.id.swLogs)
         val btnSave = findViewById<Button>(R.id.btnSave)
         val imgInfo = findViewById<ImageView>(R.id.imgGboardInfo)
 
@@ -60,17 +57,14 @@ class GboardActivity : AppCompatActivity() {
     private fun loadSettings() {
         etLimit.setText(PrefsManager.getLocalInt(this, Constants.KEY_GBOARD_LIMIT, Constants.DEFAULT_GBOARD_LIMIT).toString())
         etRetention.setText(PrefsManager.getLocalInt(this, Constants.KEY_GBOARD_RETENTION_DAYS, Constants.DEFAULT_GBOARD_RETENTION).toString())
-        swLogs.isChecked = PrefsManager.getLocalInt(this, Constants.KEY_GBOARD_LOGS, 0) == 1
     }
 
     private fun saveSettings() {
         val limit = etLimit.text.toString().toIntOrNull() ?: Constants.DEFAULT_GBOARD_LIMIT
         val retention = etRetention.text.toString().toIntOrNull() ?: Constants.DEFAULT_GBOARD_RETENTION
-        val logs = if (swLogs.isChecked) 1 else 0
 
         PrefsManager.putInt(this, Constants.KEY_GBOARD_LIMIT, limit)
         PrefsManager.putInt(this, Constants.KEY_GBOARD_RETENTION_DAYS, retention)
-        PrefsManager.putInt(this, Constants.KEY_GBOARD_LOGS, logs)
         
         Toast.makeText(this, "Settings Saved", Toast.LENGTH_SHORT).show()
         openAppInfo("com.google.android.inputmethod.latin")

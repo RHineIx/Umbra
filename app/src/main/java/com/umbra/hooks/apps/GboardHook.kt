@@ -33,7 +33,7 @@ class GboardHook : AppHook {
     @Volatile private var cachedLimit = Constants.DEFAULT_GBOARD_LIMIT
     @Volatile private var logsEnabled = false
 
-    // Linked to User Preference (Switch)
+    // Linked to Global Preference
     private fun log(message: String) {
         if (logsEnabled) {
             XposedBridge.log("$TAG $message")
@@ -70,7 +70,8 @@ class GboardHook : AppHook {
 
     private fun refreshConfig(context: Context) {
         cachedLimit = PrefsManager.getRemoteInt(context, Constants.KEY_GBOARD_LIMIT, Constants.DEFAULT_GBOARD_LIMIT)
-        logsEnabled = PrefsManager.getRemoteInt(context, Constants.KEY_GBOARD_LOGS, 0) == 1
+        // Now using GLOBAL LOGS Key
+        logsEnabled = PrefsManager.getRemoteInt(context, Constants.KEY_GLOBAL_LOGS, 0) == 1
     }
 
     private fun initializeHooksSmartly(context: Context, classLoader: ClassLoader) {
@@ -137,7 +138,7 @@ class GboardHook : AppHook {
                     .putString(KEY_METHOD_ADAPTER, adapterMethodStr)
                     .putString(KEY_CLASS_METRICS, metricsClassStr)
                     .apply()
-                    
+                
                 log("DexKit Analysis Complete. Cache Updated.")
 
             } catch (e: Throwable) {

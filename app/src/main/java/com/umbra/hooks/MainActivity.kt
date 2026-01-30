@@ -1,7 +1,6 @@
 package com.umbra.hooks
 
 import android.content.Intent
-import android.content.pm.PackageManager
 import android.content.res.ColorStateList
 import android.net.Uri
 import android.os.Build
@@ -16,15 +15,21 @@ import androidx.appcompat.app.AppCompatActivity
 import androidx.lifecycle.lifecycleScope
 import com.google.android.material.card.MaterialCardView
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
+import com.google.android.material.materialswitch.MaterialSwitch
+import com.umbra.hooks.utils.Constants
+import com.umbra.hooks.utils.PrefsManager
 import com.umbra.hooks.utils.UpdateUtils
 import kotlinx.coroutines.launch
 
 class MainActivity : AppCompatActivity() {
 
+    private lateinit var swGlobalLogs: MaterialSwitch
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
 
+        // UI Setup
         findViewById<MaterialCardView>(R.id.cardGboard).setOnClickListener {
             startActivity(Intent(this, GboardActivity::class.java))
         }
@@ -41,8 +46,23 @@ class MainActivity : AppCompatActivity() {
             findViewById<MaterialCardView>(R.id.cardUpdate).visibility = View.GONE
         }
 
+        // Global Logs Switch Logic
+        swGlobalLogs = findViewById(R.id.swGlobalLogs)
+        setupGlobalLogs()
+
         updateUI()
         checkForUpdates()
+    }
+
+    private fun setupGlobalLogs() {
+        // Load state
+        val isEnabled = PrefsManager.getLocalInt(this, Constants.KEY_GLOBAL_LOGS, 0) == 1
+        swGlobalLogs.isChecked = isEnabled
+
+        // Save on change
+        swGlobalLogs.setOnCheckedChangeListener { _, isChecked ->
+            PrefsManager.putInt(this, Constants.KEY_GLOBAL_LOGS, if (isChecked) 1 else 0)
+        }
     }
 
     private fun checkForUpdates() {
@@ -57,11 +77,8 @@ class MainActivity : AppCompatActivity() {
         } catch (_: Exception) { "0" }
 
         lifecycleScope.launch {
-            val latestTag = UpdateUtils.checkUpdate() // سيجلب "v400"
-            
+            val latestTag = UpdateUtils.checkUpdate()
             if (latestTag != null) {
-                // المقارنة الآن ستكون بين "400" (المحلي) و "400" (القادم من v400)
-                // النتيجة ستكون متطابقة ولن يظهر التحديث
                 if (UpdateUtils.isNewer(currentCode, latestTag)) {
                     findViewById<TextView>(R.id.tvUpdateDesc).text = "New release $latestTag is ready for download."
                     findViewById<MaterialCardView>(R.id.cardUpdate).visibility = View.VISIBLE
@@ -78,7 +95,7 @@ class MainActivity : AppCompatActivity() {
     private fun showAboutDialog() {
         val versionName = try {
             packageManager.getPackageInfo(packageName, 0).versionName
-        } catch (_: Exception) { "4.0.0" }
+        } catch (_: Exception) { "Unknown" }
 
         val aboutText = """
             <b>Umbra v$versionName</b><br><br>
