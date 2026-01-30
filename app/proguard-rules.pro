@@ -1,13 +1,17 @@
+-keep class de.robv.android.xposed.** { *; }
+-dontwarn de.robv.android.xposed.**
+-keep class org.luckypray.dexkit.** { *; }
+-dontwarn org.luckypray.dexkit.**
+
 -keep class com.umbra.hooks.MainHook { *; }
+-keep class com.umbra.hooks.core.** { *; }
 -keep class com.umbra.hooks.apps.** { *; }
 -keep class com.umbra.hooks.utils.** { *; }
 -keep class com.umbra.hooks.BuildConfig { *; }
 
--keep class de.robv.android.xposed.** { *; }
--dontwarn de.robv.android.xposed.**
-
--keep class org.luckypray.dexkit.** { *; }
--dontwarn org.luckypray.dexkit.**
+-keep class com.umbra.hooks.MainActivity {
+    boolean isModuleActive();
+}
 
 -keepattributes *Annotation*,Signature,InnerClasses,EnclosingMethod,Exceptions
 
