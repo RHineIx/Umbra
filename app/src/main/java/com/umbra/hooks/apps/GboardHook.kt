@@ -2,6 +2,7 @@ package com.umbra.hooks.apps
 
 import android.app.Application
 import android.content.Context
+import android.content.SharedPreferences
 import android.net.Uri
 import com.umbra.hooks.core.AppHook
 import com.umbra.hooks.utils.Constants
@@ -55,9 +56,11 @@ class GboardHook : AppHook {
                         
                         if (logsEnabled) log("Hooks Initializing. Limit: $cachedLimit")
                         
+                        // 1. Fast, synchronous hook for known classes (No DexKit needed)
                         hookClipboardProvider(lpparam.classLoader)
-                        setupDynamicHooks(context, lpparam.classLoader)
-                        setupPrivacyHooks(context, lpparam.classLoader)
+                        
+                        // 2. Heavy DexKit operations handled via Cache or Background Thread
+                        handleDynamicAndPrivacyHooks(context, lpparam.classLoader)
                     } catch (t: Throwable) {
                         XposedBridge.log("$TAG attach error: $t")
                     }
@@ -96,59 +99,98 @@ class GboardHook : AppHook {
         } catch (t: Throwable) { log("Provider hook error: $t") }
     }
 
-    private fun setupDynamicHooks(context: Context, classLoader: ClassLoader) {
+    private fun handleDynamicAndPrivacyHooks(context: Context, classLoader: ClassLoader) {
         val cachePrefs = context.getSharedPreferences(PREFS_CACHE, Context.MODE_PRIVATE)
+        
+        @Suppress("DEPRECATION")
         val versionCode = try { context.packageManager.getPackageInfo(context.packageName, 0).versionCode } catch (_: Exception) { -1 }
-        val isSameVersion = (versionCode == cachePrefs.getInt(KEY_VERSION, -1))
+        
+        val cachedVersion = cachePrefs.getInt(KEY_VERSION, -1)
+        val isSameVersion = (versionCode != -1 && versionCode == cachedVersion)
 
-        var configMethod = if (isSameVersion) cachePrefs.getString(KEY_METHOD_CONFIG, null) else null
-        var cleanupMethod = if (isSameVersion) cachePrefs.getString(KEY_METHOD_CLEANUP, null) else null
+        if (isSameVersion) {
+            // Cache Hit: Rely ONLY on versionCode match. Apply whatever we found previously.
+            log("Cache hit (Version: $versionCode). Applying hooks synchronously.")
+            
+            val configMethod = cachePrefs.getString(KEY_METHOD_CONFIG, null)
+            val cleanupMethod = cachePrefs.getString(KEY_METHOD_CLEANUP, null)
+            val metricsClass = cachePrefs.getString(KEY_CLASS_METRICS, null)
+            
+            applyDynamicHooks(classLoader, configMethod, cleanupMethod)
+            applyPrivacyHooks(classLoader, metricsClass)
+        } else {
+            // Cache Miss: Offload heavy DexKit search to background thread to prevent ANR
+            log("Cache miss (Current: $versionCode, Cached: $cachedVersion). Starting background DexKit search...")
+            Thread {
+                performBackgroundSearchAndHook(context, classLoader, versionCode, cachePrefs)
+            }.start()
+        }
+    }
 
-        if (configMethod == null || cleanupMethod == null) {
-            try {
-                DexKitBridge.create(classLoader, true).use { bridge ->
-                    // 1. Find the Class "ClipboardAdapter"
-                    val adapterClassData = bridge.findClass { 
-                        matcher { usingStrings("com/google/android/apps/inputmethod/libs/clipboard/ClipboardAdapter") } 
-                    }.firstOrNull()
+    private fun performBackgroundSearchAndHook(
+        context: Context,
+        classLoader: ClassLoader,
+        versionCode: Int,
+        cachePrefs: SharedPreferences
+    ) {
+        var configMethod: String? = null
+        var cleanupMethod: String? = null
+        var metricsClass: String? = null
 
-                    if (adapterClassData != null) {
-                        // 2. Find Cleanup Method (void E() in your smali)
-                        if (cleanupMethod == null) {
-                             // FIX: Instead of guessing the DSL property for className,
-                             // we search broadly and filter in Kotlin. This guarantees compilation.
-                             cleanupMethod = bridge.findMethod {
-                                matcher {
-                                    returnType("void")
-                                    usingNumbers(5)
-                                }
-                            }
-                            .filter { it.className == adapterClassData.name } // Robust Filtering Here
-                            .firstOrNull()?.toDexMethod()?.serialize()
+        try {
+            DexKitBridge.create(classLoader, true).use { bridge ->
+                // --- 1. Dynamic Hooks (Clipboard Adapter) ---
+                val adapterClassData = bridge.findClass { 
+                    matcher { usingStrings("com/google/android/apps/inputmethod/libs/clipboard/ClipboardAdapter") } 
+                }.firstOrNull()
+
+                if (adapterClassData != null) {
+                    cleanupMethod = bridge.findMethod {
+                        matcher {
+                            returnType("void")
+                            usingNumbers(5)
                         }
                     }
-
-                    // Config Method
-                    if (configMethod == null) {
-                        configMethod = bridge.findMethod { 
-                            matcher { 
-                                usingStrings("Invalid flag:")
-                                returnType("java.lang.Object") 
-                            } 
-                        }.firstOrNull()?.toDexMethod()?.serialize()
-                    }
-                    
-                    cachePrefs.edit()
-                        .putInt(KEY_VERSION, versionCode)
-                        .putString(KEY_METHOD_CONFIG, configMethod)
-                        .putString(KEY_METHOD_CLEANUP, cleanupMethod)
-                        .apply()
+                    .filter { it.className == adapterClassData.name } // Robust Filtering Here
+                    .firstOrNull()?.toDexMethod()?.serialize()
                 }
-            } catch (t: Throwable) { log("DexKit init error: $t") }
-        }
 
+                // Config Method
+                configMethod = bridge.findMethod { 
+                    matcher { 
+                        usingStrings("Invalid flag:")
+                        returnType("java.lang.Object") 
+                    } 
+                }.firstOrNull()?.toDexMethod()?.serialize()
+
+                // --- 2. Privacy Hooks (UserMetrics) ---
+                metricsClass = bridge.findClass { 
+                    matcher { usingStrings("UserMetrics", "Failed to process metrics") } 
+                }.firstOrNull()?.name
+            }
+
+            // --- 3. Save to Cache (Always save to prevent infinite background loops on unsupported versions) ---
+            cachePrefs.edit()
+                .putInt(KEY_VERSION, versionCode)
+                .putString(KEY_METHOD_CONFIG, configMethod)
+                .putString(KEY_METHOD_CLEANUP, cleanupMethod)
+                .putString(KEY_CLASS_METRICS, metricsClass)
+                .apply()
+                
+            log("Background search completed. Results cached for version $versionCode.")
+
+            // --- 4. Apply Hooks ---
+            applyDynamicHooks(classLoader, configMethod, cleanupMethod)
+            applyPrivacyHooks(classLoader, metricsClass)
+
+        } catch (t: Throwable) { 
+            log("DexKit background init error: $t") 
+        }
+    }
+
+    private fun applyDynamicHooks(classLoader: ClassLoader, configMethodStr: String?, cleanupMethodStr: String?) {
         // Apply Flag Hook
-        configMethod?.let {
+        configMethodStr?.let {
             try {
                 val dm = DexMethod(it)
                 XposedHelpers.findAndHookMethod(dm.className, classLoader, dm.name, object : XC_MethodHook() {
@@ -170,7 +212,7 @@ class GboardHook : AppHook {
         }
 
         // Apply Cleanup Hook (The Limit 5 Fix)
-        cleanupMethod?.let {
+        cleanupMethodStr?.let {
             try {
                 val dm = DexMethod(it)
                 // We REPLACE the method to do NOTHING. 
@@ -188,23 +230,8 @@ class GboardHook : AppHook {
         }
     }
 
-    private fun setupPrivacyHooks(context: Context, classLoader: ClassLoader) {
-        val cachePrefs = context.getSharedPreferences(PREFS_CACHE, Context.MODE_PRIVATE)
-        val versionCode = try { context.packageManager.getPackageInfo(context.packageName, 0).versionCode } catch (_: Exception) { -1 }
-        var metricsClass = if (versionCode == cachePrefs.getInt(KEY_VERSION, -1)) cachePrefs.getString(KEY_CLASS_METRICS, null) else null
-
-        if (metricsClass == null) {
-            try {
-                DexKitBridge.create(classLoader, true).use { bridge ->
-                    metricsClass = bridge.findClass { 
-                        matcher { usingStrings("UserMetrics", "Failed to process metrics") } 
-                    }.firstOrNull()?.name
-                    cachePrefs.edit().putString(KEY_CLASS_METRICS, metricsClass).apply()
-                }
-            } catch (_: Throwable) {}
-        }
-
-        metricsClass?.let {
+    private fun applyPrivacyHooks(classLoader: ClassLoader, metricsClassStr: String?) {
+        metricsClassStr?.let {
             try {
                 val clazz = XposedHelpers.findClass(it, classLoader)
                 clazz.declaredMethods.forEach { method ->

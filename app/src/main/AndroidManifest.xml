@@ -3,9 +3,6 @@
 
     <uses-permission android:name="android.permission.INTERNET" />
 
-    <queries>
-        <package android:name="com.google.android.inputmethod.latin" /> <package android:name="ru.iiec.pydroid3" />                  </queries>
-
     <application
         android:allowBackup="false"
         android:icon="@mipmap/ic_launcher"

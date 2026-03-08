@@ -42,8 +42,7 @@ class GboardActivity : AppCompatActivity() {
     }
 
     private fun showGboardHookInfoDialog() {
-        val infoText = "<b>Gboard Hook By RHineIx</b><br><br>" +
-               "Configure clipboard limits.<br><br>" +
+        val infoText = "Configure clipboard limits.<br><br>" +
                "Credits: <a href=\"https://github.com/chenyue404/GboardHook\">chenyue404</a> / Umbra."
         val dialog = MaterialAlertDialogBuilder(this)
             .setTitle("GboardHook Info")
