@@ -11,6 +11,7 @@ import android.util.TypedValue
 import android.view.View
 import android.widget.ImageView
 import android.widget.TextView
+import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import androidx.lifecycle.lifecycleScope
 import com.google.android.material.card.MaterialCardView
@@ -19,7 +20,9 @@ import com.google.android.material.materialswitch.MaterialSwitch
 import com.umbra.hooks.utils.Constants
 import com.umbra.hooks.utils.PrefsManager
 import com.umbra.hooks.utils.UpdateUtils
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 class MainActivity : AppCompatActivity() {
 
@@ -38,6 +41,10 @@ class MainActivity : AppCompatActivity() {
             showAboutDialog()
         }
 
+        findViewById<ImageView>(R.id.imgLsposed).setOnClickListener {
+            openLSPosedManager()
+        }
+
         findViewById<MaterialCardView>(R.id.cardUpdate).setOnClickListener {
             startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://github.com/RHineIx/Umbra/releases")))
         }
@@ -52,6 +59,33 @@ class MainActivity : AppCompatActivity() {
 
         updateUI()
         checkForUpdates()
+    }
+
+    private fun openLSPosedManager() {
+        // Execute the root command in the background to prevent UI freezing (ANR)
+        lifecycleScope.launch(Dispatchers.IO) {
+            try {
+                val command = arrayOf(
+                    "su",
+                    "-c",
+                    "am start -n com.android.shell/.BugreportWarningActivity -a android.intent.action.MAIN -c org.lsposed.manager.LAUNCH_MANAGER"
+                )
+                val process = Runtime.getRuntime().exec(command)
+                val exitCode = process.waitFor()
+                
+                // Exit code != 0 means root was denied or command failed
+                if (exitCode != 0) {
+                    withContext(Dispatchers.Main) {
+                        Toast.makeText(this@MainActivity, "Root permission denied.", Toast.LENGTH_SHORT).show()
+                    }
+                }
+            } catch (_: Exception) {
+                // Exception means 'su' binary is not found (Not rooted)
+                withContext(Dispatchers.Main) {
+                    Toast.makeText(this@MainActivity, "Device is not rooted.", Toast.LENGTH_SHORT).show()
+                }
+            }
+        }
     }
 
     private fun setupGlobalLogs() {

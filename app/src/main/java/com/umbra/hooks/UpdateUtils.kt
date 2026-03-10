@@ -19,7 +19,10 @@ object UpdateUtils {
             if (connection.responseCode == 200) {
                 val response = connection.inputStream.bufferedReader().use { it.readText() }
                 val json = JSONObject(response)
-                return@withContext json.optString("tag_name", null)
+                
+                // Fix for Kotlin Type Mismatch warning (Nothing? vs String)
+                val tag = json.optString("tag_name")
+                return@withContext if (tag.isEmpty()) null else tag
             }
         } catch (_: Exception) {}
         null
