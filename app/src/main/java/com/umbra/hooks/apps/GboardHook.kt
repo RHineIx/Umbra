@@ -122,13 +122,12 @@ class GboardHook : AppHook {
             // Cache Miss: Offload heavy DexKit search to background thread to prevent ANR
             log("Cache miss (Current: $versionCode, Cached: $cachedVersion). Starting background DexKit search...")
             Thread {
-                performBackgroundSearchAndHook(context, classLoader, versionCode, cachePrefs)
+                performBackgroundSearchAndHook(classLoader, versionCode, cachePrefs)
             }.start()
         }
     }
 
     private fun performBackgroundSearchAndHook(
-        context: Context,
         classLoader: ClassLoader,
         versionCode: Int,
         cachePrefs: SharedPreferences

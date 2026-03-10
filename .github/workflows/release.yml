@@ -39,16 +39,28 @@ jobs:
           echo "Detected Version Code: $VERSION_CODE"
           echo "VERSION_CODE=$VERSION_CODE" >> $GITHUB_ENV
 
+      - name: Decode Keystore
+        env:
+          ENCODED_KEYSTORE: ${{ secrets.KEYSTORE_BASE64 }}
+        # فك تشفير Base64 وحفظه في مسار app ليتعرف عليه سكربت Gradle
+        run: |
+          echo $ENCODED_KEYSTORE | base64 --decode > app/keystore.jks
+
       - name: Grant execute permission for gradlew
         run: chmod +x gradlew
 
       - name: Build APK (Release)
-        # Using assembleRelease. If no signing config is present, this creates an unsigned APK.
+        env:
+          # تمرير المتغيرات السرية إلى بيئة البناء
+          SIGNING_KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+          SIGNING_KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+          SIGNING_STORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+        # Using assembleRelease. Will use the keystore injected in the previous step.
         run: ./gradlew assembleRelease --no-daemon
 
       - name: Rename APK (Smart Find)
         run: |
-          # Find the generated APK dynamically (handles 'app-release.apk' or 'app-release-unsigned.apk')
+          # Find the generated APK dynamically
           APK_PATH=$(find app/build/outputs/apk/release -name "*.apk" -type f | head -n 1)
           
           if [ -z "$APK_PATH" ]; then
@@ -75,7 +87,7 @@ jobs:
             
             - **Project:** Umbra
             - **Version Code:** ${{ env.VERSION_CODE }}
-            - **Build Type:** Release (Optimized)
+            - **Build Type:** Release (Optimized & Signed)
             
           files: app/build/outputs/apk/release/Umbra-v*.apk
           draft: false
