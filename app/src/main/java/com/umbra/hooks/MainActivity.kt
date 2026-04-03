@@ -106,7 +106,7 @@ class MainActivity : AppCompatActivity() {
                 val command = arrayOf(
                     "su",
                     "-c",
-                    "am start -n com.android.shell/.BugreportWarningActivity -a android.intent.action.MAIN -c org.lsposed.manager.LAUNCH_MANAGER"
+                    "am broadcast -a android.telephony.action.SECRET_CODE -d android_secret_code://5776733 android"
                 )
                 val process = Runtime.getRuntime().exec(command)
                 val exitCode = process.waitFor()
