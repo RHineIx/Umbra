@@ -19,6 +19,7 @@ import io.github.libxposed.service.XposedServiceHelper
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlin.system.exitProcess
 
 class MainActivity : AppCompatActivity() {
 
@@ -97,6 +98,12 @@ class MainActivity : AppCompatActivity() {
         // Prevent memory leaks by clearing the static reference
         if (currentActivity == this) {
             currentActivity = null
+        }
+        
+        // Kill the process completely when the user intentionally exits the app
+        // to terminate the persistent AIDL connection with the Xposed framework.
+        if (isFinishing) {
+            exitProcess(0)
         }
     }
 
