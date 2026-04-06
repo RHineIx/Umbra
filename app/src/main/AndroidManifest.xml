@@ -10,13 +10,6 @@
         android:supportsRtl="true"
         android:theme="@style/Theme.Umbra">
 
-        <provider
-            android:name=".utils.ConfigProvider"
-            android:authorities="com.umbra.hooks.provider"
-            android:exported="true"
-            android:enabled="true"
-            android:multiprocess="true" />
-
         <activity
             android:name=".MainActivity"
             android:exported="true">
@@ -29,17 +22,6 @@
         <activity
             android:name=".GboardActivity"
             android:exported="false" />
-
-        <service
-            android:name=".utils.LSPosedTileService"
-            android:icon="@drawable/lsp"
-            android:label="LSPosed Manager"
-            android:permission="android.permission.BIND_QUICK_SETTINGS_TILE"
-            android:exported="true">
-            <intent-filter>
-                <action android:name="android.service.quicksettings.action.QS_TILE" />
-            </intent-filter>
-        </service>
 
     </application>
 </manifest>

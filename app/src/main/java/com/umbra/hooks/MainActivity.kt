@@ -27,10 +27,11 @@ class MainActivity : AppCompatActivity() {
 
     companion object {
         @Volatile
-        private var xposedService: XposedService? = null
+        var xposedService: XposedService? = null
+            private set
+
         private var isListenerRegistered = false
 
-        // Static reference to update UI from global service events
         @SuppressLint("StaticFieldLeak")
         private var currentActivity: MainActivity? = null
 
@@ -57,17 +58,13 @@ class MainActivity : AppCompatActivity() {
 
         currentActivity = this
 
-        // Register listener once per process lifecycle
         if (!isListenerRegistered) {
             try {
                 XposedServiceHelper.registerListener(globalServiceListener)
                 isListenerRegistered = true
-            } catch (e: Throwable) {
-                // Framework not available
-            }
+            } catch (_: Throwable) {}
         }
 
-        // Navigation and UI setup
         findViewById<MaterialCardView>(R.id.cardGboard).setOnClickListener {
             startActivity(Intent(this, GboardActivity::class.java))
         }
@@ -77,14 +74,12 @@ class MainActivity : AppCompatActivity() {
         }
 
         swGlobalLogs = findViewById(R.id.swGlobalLogs)
-        setupGlobalLogs()
     }
 
     override fun onResume() {
         super.onResume()
         currentActivity = this
-        
-        // Sync UI state immediately on resume using cached service reference
+
         val service = xposedService
         if (service != null) {
             updateUI(true, service.frameworkName, service.frameworkVersion)
@@ -95,14 +90,19 @@ class MainActivity : AppCompatActivity() {
 
     override fun onDestroy() {
         super.onDestroy()
-        // Prevent memory leaks by clearing the static reference
+
         if (currentActivity == this) {
             currentActivity = null
         }
-        
-        // Kill the process completely when the user intentionally exits the app
-        // to terminate the persistent AIDL connection with the Xposed framework.
+
         if (isFinishing) {
+            if (isListenerRegistered) {
+                try {
+                    isListenerRegistered = false
+                    xposedService = null
+                } catch (_: Throwable) {}
+            }
+
             exitProcess(0)
         }
     }
@@ -117,7 +117,7 @@ class MainActivity : AppCompatActivity() {
                 )
                 val process = Runtime.getRuntime().exec(command)
                 val exitCode = process.waitFor()
-                
+
                 if (exitCode != 0) {
                     withContext(Dispatchers.Main) {
                         Toast.makeText(this@MainActivity, "Root permission denied.", Toast.LENGTH_SHORT).show()
@@ -132,11 +132,16 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun setupGlobalLogs() {
-        val isEnabled = PrefsManager.getLocalInt(this, Constants.KEY_GLOBAL_LOGS, 0) == 1
+        val isEnabled = PrefsManager.getInt(xposedService, Constants.KEY_GLOBAL_LOGS, 0) == 1
+        swGlobalLogs.setOnCheckedChangeListener(null)
         swGlobalLogs.isChecked = isEnabled
 
         swGlobalLogs.setOnCheckedChangeListener { _, isChecked ->
-            PrefsManager.putInt(this, Constants.KEY_GLOBAL_LOGS, if (isChecked) 1 else 0)
+            val success = PrefsManager.putInt(xposedService, Constants.KEY_GLOBAL_LOGS, if (isChecked) 1 else 0)
+            if (!success && isChecked) {
+                swGlobalLogs.isChecked = false
+                Toast.makeText(this, "Xposed service disconnected", Toast.LENGTH_SHORT).show()
+            }
         }
     }
 
@@ -146,26 +151,28 @@ class MainActivity : AppCompatActivity() {
         val tvTitle = findViewById<TextView>(R.id.tvStatusTitle)
         val tvDesc = findViewById<TextView>(R.id.tvStatusDesc)
 
+        setupGlobalLogs()
+
         if (isActive) {
             val colorContainer = getThemeColor(com.google.android.material.R.attr.colorPrimaryContainer)
             val colorOnContainer = getThemeColor(com.google.android.material.R.attr.colorOnPrimaryContainer)
-            
+
             cardStatus.setCardBackgroundColor(colorContainer)
             imgStatus.imageTintList = ColorStateList.valueOf(colorOnContainer)
             tvTitle.setTextColor(colorOnContainer)
             tvDesc.setTextColor(colorOnContainer)
-            
+
             tvTitle.text = "Module Activated"
             tvDesc.text = "Running in ${fwName ?: "Unknown"} (${fwVersion ?: "Unknown"})"
         } else {
             val colorContainer = getThemeColor(com.google.android.material.R.attr.colorErrorContainer)
             val colorOnContainer = getThemeColor(com.google.android.material.R.attr.colorOnErrorContainer)
-            
+
             cardStatus.setCardBackgroundColor(colorContainer)
             imgStatus.imageTintList = ColorStateList.valueOf(colorOnContainer)
             tvTitle.setTextColor(colorOnContainer)
             tvDesc.setTextColor(colorOnContainer)
-            
+
             tvTitle.text = "Module Not Active"
             tvDesc.text = "Enable in LSPosed and reboot."
         }

@@ -32,19 +32,30 @@ class GboardActivity : AppCompatActivity() {
     }
 
     private fun loadSettings() {
-        etLimit.setText(PrefsManager.getLocalInt(this, Constants.KEY_GBOARD_LIMIT, Constants.DEFAULT_GBOARD_LIMIT).toString())
-        etRetention.setText(PrefsManager.getLocalInt(this, Constants.KEY_GBOARD_RETENTION_DAYS, Constants.DEFAULT_GBOARD_RETENTION).toString())
+        val service = MainActivity.xposedService
+        etLimit.setText(PrefsManager.getInt(service, Constants.KEY_GBOARD_LIMIT, Constants.DEFAULT_GBOARD_LIMIT).toString())
+        etRetention.setText(PrefsManager.getInt(service, Constants.KEY_GBOARD_RETENTION_DAYS, Constants.DEFAULT_GBOARD_RETENTION).toString())
     }
 
     private fun saveSettings() {
+        val service = MainActivity.xposedService
+        if (service == null) {
+            Toast.makeText(this, "Xposed service disconnected", Toast.LENGTH_SHORT).show()
+            return
+        }
+
         val limit = etLimit.text.toString().toIntOrNull() ?: Constants.DEFAULT_GBOARD_LIMIT
         val retention = etRetention.text.toString().toIntOrNull() ?: Constants.DEFAULT_GBOARD_RETENTION
 
-        PrefsManager.putInt(this, Constants.KEY_GBOARD_LIMIT, limit)
-        PrefsManager.putInt(this, Constants.KEY_GBOARD_RETENTION_DAYS, retention)
+        val limitSaved = PrefsManager.putInt(service, Constants.KEY_GBOARD_LIMIT, limit)
+        val retentionSaved = PrefsManager.putInt(service, Constants.KEY_GBOARD_RETENTION_DAYS, retention)
 
-        Toast.makeText(this, "Settings Saved", Toast.LENGTH_SHORT).show()
-        openAppInfo("com.google.android.inputmethod.latin")
+        if (limitSaved && retentionSaved) {
+            Toast.makeText(this, "Settings Saved", Toast.LENGTH_SHORT).show()
+            openAppInfo("com.google.android.inputmethod.latin")
+        } else {
+            Toast.makeText(this, "Failed to save settings", Toast.LENGTH_SHORT).show()
+        }
     }
 
     private fun openAppInfo(packageName: String) {

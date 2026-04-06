@@ -1,37 +1,39 @@
 package com.umbra.hooks.utils
 
-import android.content.Context
-import android.net.Uri
+import io.github.libxposed.api.XposedModule
+import io.github.libxposed.service.XposedService
 
 object PrefsManager {
     
-    private const val AUTHORITY = "com.umbra.hooks.provider"
+    private const val PREFS_NAME = "umbra_settings"
 
-    // --- Local Write (Used by GboardActivity) ---
-    // No need for fixPermissions anymore because we use a ContentProvider
-    fun putInt(context: Context, key: String, value: Int) {
-        val prefs = context.getSharedPreferences(Constants.PREFS_FILE, Context.MODE_PRIVATE)
-        prefs.edit().putInt(key, value).apply() // 'apply' is faster than 'commit'
+    fun putInt(service: XposedService?, key: String, value: Int): Boolean {
+        if (service == null) return false
+        return try {
+            val prefs = service.getRemotePreferences(PREFS_NAME)
+            prefs.edit().putInt(key, value).apply()
+            true
+        } catch (_: Throwable) {
+            false
+        }
     }
 
-    fun getLocalInt(context: Context, key: String, def: Int): Int {
-        return context.getSharedPreferences(Constants.PREFS_FILE, Context.MODE_PRIVATE)
-            .getInt(key, def)
+    fun getInt(service: XposedService?, key: String, defValue: Int): Int {
+        if (service == null) return defValue
+        return try {
+            val prefs = service.getRemotePreferences(PREFS_NAME)
+            prefs.getInt(key, defValue)
+        } catch (_: Throwable) {
+            defValue
+        }
     }
 
-    // --- Remote Read (Used by GboardHook via IPC) ---
-    // Only Int support is needed for Gboard (Limit & Retention)
-    fun getRemoteInt(context: Context, key: String, defValue: Int): Int {
-        try {
-            // URI Format: content://com.umbra.hooks.provider/int/<key>
-            val uri = Uri.parse("content://$AUTHORITY/int/$key")
-            val cursor = context.contentResolver.query(uri, null, null, null, null)
-            cursor?.use {
-                if (it.moveToFirst()) {
-                    return it.getInt(0)
-                }
-            }
-        } catch (_: Throwable) { }
-        return defValue
+    fun getHookInt(module: XposedModule, key: String, defValue: Int): Int {
+        return try {
+            val prefs = module.getRemotePreferences(PREFS_NAME)
+            prefs.getInt(key, defValue)
+        } catch (_: Throwable) {
+            defValue
+        }
     }
 }

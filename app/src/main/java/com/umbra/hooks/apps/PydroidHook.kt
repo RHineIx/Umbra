@@ -54,12 +54,13 @@ class PydroidHook : AppHook {
             val attachMethod = appClass.getDeclaredMethod("attach", Context::class.java)
 
             module.hook(attachMethod).intercept { chain ->
-                // Execute original method first
                 val result = chain.proceed()
 
                 try {
                     val context = chain.args[0] as Context
-                    refreshConfig(context)
+                    
+                    // Fetch configurations silently via libxposed Remote Preferences
+                    refreshConfig()
 
                     if (logsEnabled) logInfo("Context attached. Initializing...")
                     handleDynamicHooks(context, classLoader)
@@ -76,8 +77,8 @@ class PydroidHook : AppHook {
         hookActivityLifecycle(classLoader)
     }
 
-    private fun refreshConfig(context: Context) {
-        logsEnabled = PrefsManager.getRemoteInt(context, Constants.KEY_GLOBAL_LOGS, 0) == 1
+    private fun refreshConfig() {
+        logsEnabled = PrefsManager.getHookInt(xposedModule, Constants.KEY_GLOBAL_LOGS, 0) == 1
     }
 
     private fun handleDynamicHooks(context: Context, classLoader: ClassLoader) {
@@ -158,13 +159,11 @@ class PydroidHook : AppHook {
             val clazz = classLoader.loadClass(className)
             val navViewClazz = classLoader.loadClass(NAV_VIEW_CLASS)
 
-            // Hook 1: Disable Ad/Menu Logic
             val navMethod = clazz.getDeclaredMethod(navMethodName, navViewClazz)
             xposedModule.hook(navMethod).intercept {
-                return@intercept null // Prevent execution
+                return@intercept null 
             }
 
-            // Hook 2: Enable Premium (Boolean Getters)
             val methods = clazz.declaredMethods
             for (method in methods) {
                 if (method.parameterTypes.isEmpty() &&
@@ -173,7 +172,7 @@ class PydroidHook : AppHook {
                 ) {
                     try {
                         xposedModule.hook(method).intercept {
-                            return@intercept true // Force true
+                            return@intercept true 
                         }
                     } catch (_: Throwable) {}
                 }
