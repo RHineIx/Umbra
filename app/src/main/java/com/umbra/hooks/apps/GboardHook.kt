@@ -59,7 +59,9 @@ class GboardHook : AppHook {
                 val result = chain.proceed()
                 try {
                     val context = chain.args[0] as Context
-                    refreshConfig(context)
+                    
+                    // Fetch configurations silently via libxposed Remote Preferences
+                    refreshConfig()
 
                     if (logsEnabled) logInfo("Hooks Initializing. Limit: $cachedLimit")
 
@@ -75,9 +77,9 @@ class GboardHook : AppHook {
         }
     }
 
-    private fun refreshConfig(context: Context) {
-        cachedLimit = PrefsManager.getRemoteInt(context, Constants.KEY_GBOARD_LIMIT, Constants.DEFAULT_GBOARD_LIMIT)
-        logsEnabled = PrefsManager.getRemoteInt(context, Constants.KEY_GLOBAL_LOGS, 0) == 1
+    private fun refreshConfig() {
+        cachedLimit = PrefsManager.getHookInt(xposedModule, Constants.KEY_GBOARD_LIMIT, Constants.DEFAULT_GBOARD_LIMIT)
+        logsEnabled = PrefsManager.getHookInt(xposedModule, Constants.KEY_GLOBAL_LOGS, 0) == 1
     }
 
     private fun hookClipboardProvider(classLoader: ClassLoader) {
@@ -100,13 +102,9 @@ class GboardHook : AppHook {
                     val newSortOrder = sortOrder.replace(limitPattern, "LIMIT $cachedLimit")
                     logInfo("SQL Limit patched: $newSortOrder")
 
-                    // تحويل القائمة المعزولة إلى مصفوفة (Array) قابلة للتعديل بأمان
                     val newArgs = originalArgs.toTypedArray()
-
-                    // التعديل حصراً على المصفوفة الجديدة
                     newArgs[4] = newSortOrder
 
-                    // تمرير المصفوفة المعدلة إلى مسار التنفيذ
                     return@intercept chain.proceed(newArgs)
                 }
 
