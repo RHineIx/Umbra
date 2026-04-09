@@ -12,12 +12,13 @@ android {
         minSdk = 26
         targetSdk = 36
 
-        versionCode = 20301
-        versionName = "2.3.1"
+        versionCode = 20308
+        versionName = "2.3.8"
 
         ndk {
             abiFilters.add("arm64-v8a")
         }
+        resourceConfigurations.addAll(listOf("en"))
     }
 
     signingConfigs {
@@ -67,14 +68,12 @@ android {
         }
     }
 
-    // CRITICAL: Prevent Lint from aborting the build for Xposed-specific API usage
     lint {
         abortOnError = false
         checkReleaseBuilds = false
     }
 }
 
-// Modern Kotlin DSL for compiler options
 kotlin {
     compilerOptions {
         jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_17)
@@ -82,18 +81,12 @@ kotlin {
 }
 
 dependencies {
-    // Standard AndroidX & UI
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.appcompat)
     implementation(libs.material)
     implementation(libs.androidx.constraintlayout)
 
-    // Modern LibXposed API (Must be compileOnly to avoid ClassCastException)
     compileOnly(libs.libxposed.api)
-
-    // LibXposed Service for IPC
     implementation(libs.libxposed.service)
-
-    // DexKit 2.1.0
     implementation(libs.dexkit)
 }
