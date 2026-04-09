@@ -11,7 +11,6 @@ import io.github.libxposed.api.XposedModuleInterface
 @SuppressLint("NewApi")
 class MainHook : XposedModule() {
 
-    // Initialize hooks list
     private val hooks: List<AppHook> = listOf(
         GboardHook(),
         PydroidHook()
@@ -21,7 +20,6 @@ class MainHook : XposedModule() {
         super.onPackageLoaded(param)
         val packageName = param.packageName
 
-        // Dispatch external Hooks (No self-hooking logic needed or allowed in libxposed 101)
         for (hook in hooks) {
             if (packageName in hook.targetPackages) {
                 try {

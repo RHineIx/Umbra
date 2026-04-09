@@ -27,24 +27,19 @@ class GboardHook : AppHook {
         private const val KEY_CLASS_METRICS = "class_metrics_processor"
         private const val KEY_METHOD_RETENTION = "method_retention_logic"
 
-        // Gboard default retention is 1 hour (3600000 ms)
         private const val GBOARD_DEFAULT_RETENTION_MS = 3600000L
-
-        // Throttling: Prevent spamming the DB with delete queries (30 seconds)
         private const val CLEANUP_COOLDOWN_MS = 30000L
     }
 
     override val targetPackages = setOf("com.google.android.inputmethod.latin")
 
     @Volatile private var cachedLimit = Constants.DEFAULT_GBOARD_LIMIT
-    @Volatile private var cachedRetentionMs = Constants.DEFAULT_GBOARD_RETENTION * 86400000L // 1 Day
+    @Volatile private var cachedRetentionMs = Constants.DEFAULT_GBOARD_RETENTION * 86400000L
     @Volatile private var logsEnabled = false
     @Volatile private var lastCleanupTime = 0L
 
     private lateinit var xposedModule: XposedModule
     private val limitPattern = "(?i)limit\\s+\\d+".toRegex()
-
-    // Dedicated executor for background tasks (DexKit and DB I/O) to prevent UI thread blocks
     private val backgroundExecutor: ExecutorService = Executors.newSingleThreadExecutor()
 
     init {
@@ -72,15 +67,7 @@ class GboardHook : AppHook {
                 val result = chain.proceed()
                 try {
                     val context = chain.args[0] as Context
-
-                    // Initialize Cross-process Listener for Live Updates
                     setupReactivePrefs()
-
-                    if (logsEnabled) {
-                        logInfo("Hooks Initializing. Limit: $cachedLimit, Retention: ${cachedRetentionMs / 86400000L} days")
-                    }
-
-                    // Pass Context to Provider Hook for proactive background deletion
                     hookClipboardProvider(classLoader, context)
                     handleDynamicAndPrivacyHooks(context, classLoader)
                 } catch (t: Throwable) {
@@ -93,17 +80,13 @@ class GboardHook : AppHook {
         }
     }
 
-    /**
-     * Sets up a cross-process listener to instantly apply settings changes from the Umbra app.
-     */
     private fun setupReactivePrefs() {
         try {
             val prefs = xposedModule.getRemotePreferences(Constants.PREFS_FILE)
             refreshConfig(prefs)
 
-            prefs.registerOnSharedPreferenceChangeListener { p, key ->
+            prefs.registerOnSharedPreferenceChangeListener { p, _ ->
                 refreshConfig(p)
-                if (logsEnabled) logInfo("Config updated live: $key")
             }
         } catch (t: Throwable) {
             logError("Failed to setup reactive prefs", t)
@@ -134,25 +117,19 @@ class GboardHook : AppHook {
                 val uri = originalArgs[0] as? Uri
                 val sortOrder = originalArgs[4]?.toString() ?: ""
 
-                // Proactive Custom Cleanup Strategy (Piggybacking on UI query)
                 if (uri != null) {
                     val now = System.currentTimeMillis()
-                    // Throttle execution to prevent DB spamming during rapid UI interactions
                     if (now - lastCleanupTime > CLEANUP_COOLDOWN_MS) {
                         lastCleanupTime = now
                         val threshold = now - cachedRetentionMs
 
-                        // Execute DB deletion on a background thread to prevent UI jank
                         backgroundExecutor.submit {
                             try {
-                                val deletedCount = context.contentResolver.delete(
+                                context.contentResolver.delete(
                                     uri,
                                     "timestamp < ?",
                                     arrayOf(threshold.toString())
                                 )
-                                if (deletedCount > 0) {
-                                    logInfo("Proactive Cleanup: Deleted $deletedCount expired items asynchronously.")
-                                }
                             } catch (e: Throwable) {
                                 logError("Proactive Cleanup failed", e)
                             }
@@ -160,7 +137,6 @@ class GboardHook : AppHook {
                     }
                 }
 
-                // Apply limit manipulation
                 if (limitPattern.containsMatchIn(sortOrder)) {
                     val newSortOrder = sortOrder.replace(limitPattern, "LIMIT $cachedLimit")
                     val newArgs = originalArgs.toTypedArray()
@@ -183,17 +159,14 @@ class GboardHook : AppHook {
         val isSameVersion = (versionCode != -1 && versionCode == cachedVersion)
 
         if (isSameVersion) {
-            logInfo("Cache hit (Version: $versionCode). Applying dynamic hooks.")
-            val configMethod = cachePrefs.getString(KEY_METHOD_CONFIG, null)
-            val cleanupMethod = cachePrefs.getString(KEY_METHOD_CLEANUP, null)
-            val metricsClass = cachePrefs.getString(KEY_CLASS_METRICS, null)
-            val retentionMethod = cachePrefs.getString(KEY_METHOD_RETENTION, null)
-
-            applyDynamicHooks(classLoader, configMethod, cleanupMethod, retentionMethod)
-            applyPrivacyHooks(classLoader, metricsClass)
+            applyDynamicHooks(
+                classLoader,
+                cachePrefs.getString(KEY_METHOD_CONFIG, null),
+                cachePrefs.getString(KEY_METHOD_CLEANUP, null),
+                cachePrefs.getString(KEY_METHOD_RETENTION, null)
+            )
+            applyPrivacyHooks(classLoader, cachePrefs.getString(KEY_CLASS_METRICS, null))
         } else {
-            logInfo("Cache miss. Starting background DexKit search via Executor...")
-            // Use controlled executor instead of raw thread
             backgroundExecutor.submit {
                 performBackgroundSearchAndHook(context, classLoader, versionCode, cachePrefs)
             }
@@ -214,7 +187,6 @@ class GboardHook : AppHook {
         try {
             val apkPath = context.applicationInfo.sourceDir
             DexKitBridge.create(apkPath).use { bridge ->
-                // 1. Find Cleanup Method (UI limit enforcement bypass)
                 val adapterClassData = bridge.findClass {
                     matcher { usingStrings("com/google/android/apps/inputmethod/libs/clipboard/ClipboardAdapter") }
                 }.firstOrNull()
@@ -225,19 +197,13 @@ class GboardHook : AppHook {
                             returnType("void")
                             usingNumbers(5)
                         }
-                    }
-                        .filter { it.className == adapterClassData.name }
-                        .firstOrNull()?.toDexMethod()?.serialize()
+                    }.firstOrNull { it.className == adapterClassData.name }?.toDexMethod()?.serialize()
                 }
 
-                // 2. Find Native Deletion/Retention Logic using constant 3600000L
                 retentionMethod = bridge.findMethod {
-                    matcher {
-                        usingNumbers(GBOARD_DEFAULT_RETENTION_MS)
-                    }
+                    matcher { usingNumbers(GBOARD_DEFAULT_RETENTION_MS) }
                 }.firstOrNull()?.toDexMethod()?.serialize()
 
-                // 3. Find Internal Config Flags
                 configMethod = bridge.findMethod {
                     matcher {
                         usingStrings("Invalid flag:")
@@ -245,7 +211,6 @@ class GboardHook : AppHook {
                     }
                 }.firstOrNull()?.toDexMethod()?.serialize()
 
-                // 4. Find Metrics Processor
                 metricsClass = bridge.findClass {
                     matcher { usingStrings("UserMetrics", "Failed to process metrics") }
                 }.firstOrNull()?.name
@@ -259,11 +224,8 @@ class GboardHook : AppHook {
                 .putString(KEY_METHOD_RETENTION, retentionMethod)
                 .apply()
 
-            logInfo("Background search completed. Results cached.")
-
             applyDynamicHooks(classLoader, configMethod, cleanupMethod, retentionMethod)
             applyPrivacyHooks(classLoader, metricsClass)
-
         } catch (t: Throwable) {
             logError("DexKit background init error", t)
         }
@@ -275,7 +237,6 @@ class GboardHook : AppHook {
         cleanupMethodStr: String?,
         retentionMethodStr: String?
     ) {
-        // --- Hook 1: Feature Flags ---
         configMethodStr?.let {
             try {
                 val dm = DexMethod(it)
@@ -298,33 +259,24 @@ class GboardHook : AppHook {
             } catch (_: Throwable) {}
         }
 
-        // --- Hook 2: UI Cleanup Bypass ---
         cleanupMethodStr?.let {
             try {
                 val dm = DexMethod(it)
                 val clazz = classLoader.loadClass(dm.className)
                 val method = clazz.declaredMethods.first { m -> m.name == dm.name }
 
-                xposedModule.hook(method).intercept {
-                    return@intercept null
-                }
-            } catch (t: Throwable) { logError("Cleanup Hook Failed", t) }
+                xposedModule.hook(method).intercept { return@intercept null }
+            } catch (_: Throwable) { }
         }
 
-        // --- Hook 3: Disable Native Gboard Retention ---
-        // Prevents Gboard from automatically deleting items after 1 hour
-        // allowing our custom proactive cleanup to manage the lifecycle.
         retentionMethodStr?.let {
             try {
                 val dm = DexMethod(it)
                 val clazz = classLoader.loadClass(dm.className)
                 val method = clazz.declaredMethods.first { m -> m.name == dm.name }
 
-                xposedModule.hook(method).intercept {
-                    logInfo("Blocked native Gboard retention task.")
-                    return@intercept null
-                }
-            } catch (t: Throwable) { logError("Retention Hook Failed", t) }
+                xposedModule.hook(method).intercept { return@intercept null }
+            } catch (_: Throwable) { }
         }
     }
 
@@ -334,9 +286,7 @@ class GboardHook : AppHook {
                 val clazz = classLoader.loadClass(it)
                 clazz.declaredMethods.forEach { method ->
                     if (Modifier.isPublic(method.modifiers)) {
-                        xposedModule.hook(method).intercept {
-                            return@intercept null
-                        }
+                        xposedModule.hook(method).intercept { return@intercept null }
                     }
                 }
             } catch (_: Throwable) {}

@@ -32,7 +32,7 @@ jobs:
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v4
         with:
-          cache-read-only: false 
+          cache-read-only: false
 
       - name: Extract Version Code
         id: extract_version
@@ -44,7 +44,6 @@ jobs:
           fi
           echo "VERSION_CODE=$VERSION_CODE" >> $GITHUB_ENV
           
-          # Logic for Tag and Pre-release status
           if [ "${{ github.event.inputs.release_type }}" == "debug_tag" ]; then
             echo "TAG_NAME=v${VERSION_CODE}-debug" >> $GITHUB_ENV
             echo "RELEASE_NAME=Umbra Debug Preview v${VERSION_CODE}" >> $GITHUB_ENV
@@ -64,7 +63,7 @@ jobs:
       - name: Grant execute permission for gradlew
         run: chmod +x gradlew
 
-      - name: Build APK (Always Release Optimized)
+      - name: Build APK
         env:
           SIGNING_KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
           SIGNING_KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
@@ -95,7 +94,7 @@ jobs:
             - **Version Code:** ${{ env.VERSION_CODE }}
             - **Release Type:** ${{ github.event.inputs.release_type }}
             - **Status:** ${{ env.IS_PRERELEASE == 'true' && 'Experimental/Debug' || 'Stable Production' }}
-            
+
           files: ${{ env.APK_FINAL_PATH }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

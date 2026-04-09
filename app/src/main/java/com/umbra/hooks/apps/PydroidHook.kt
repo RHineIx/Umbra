@@ -33,7 +33,6 @@ class PydroidHook : AppHook {
 
     @Volatile private var logsEnabled = false
     private lateinit var xposedModule: XposedModule
-
     private val backgroundExecutor: ExecutorService = Executors.newSingleThreadExecutor()
 
     init {
@@ -59,17 +58,13 @@ class PydroidHook : AppHook {
 
             module.hook(attachMethod).intercept { chain ->
                 val result = chain.proceed()
-
                 try {
                     val context = chain.args[0] as Context
                     refreshConfig()
-
-                    if (logsEnabled) logInfo("Context attached. Initializing...")
                     handleDynamicHooks(context, classLoader)
                 } catch (t: Throwable) {
                     logError("Fatal Error in attach", t)
                 }
-
                 return@intercept result
             }
         } catch (t: Throwable) {
@@ -94,7 +89,6 @@ class PydroidHook : AppHook {
         val cachedTargets = cachePrefs.getStringSet(KEY_HOOK_TARGETS, null)
 
         if (isSameVersion && cachedTargets != null && cachedTargets.isNotEmpty()) {
-            logInfo("Cache hit (Version: $versionCode). Applying hooks to ${cachedTargets.size} targets.")
             for (target in cachedTargets) {
                 val parts = target.split("|")
                 if (parts.size == 2) {
@@ -102,7 +96,6 @@ class PydroidHook : AppHook {
                 }
             }
         } else {
-            logInfo("Cache miss. Starting DexKit search via Executor...")
             backgroundExecutor.submit {
                 performSearchAndHookSynchronous(context, classLoader, versionCode, cachePrefs)
             }
@@ -133,7 +126,6 @@ class PydroidHook : AppHook {
                         !className.startsWith("android.") &&
                         !className.contains("Activity") &&
                         !className.contains("Fragment")) {
-
                         targetsToCache.add("$className|${methodData.methodName}")
                     }
                 }
@@ -144,15 +136,12 @@ class PydroidHook : AppHook {
                 .putStringSet(KEY_HOOK_TARGETS, targetsToCache)
                 .apply()
 
-            logInfo("Synchronous search completed. Found ${targetsToCache.size} targets.")
-
             for (target in targetsToCache) {
                 val parts = target.split("|")
                 if (parts.size == 2) {
                     hookMainControllerClass(classLoader, parts[0], parts[1])
                 }
             }
-
         } catch (t: Throwable) {
             logError("DexKit Init Failed", t)
         }
@@ -164,9 +153,7 @@ class PydroidHook : AppHook {
             val navViewClazz = classLoader.loadClass(NAV_VIEW_CLASS)
 
             val navMethod = clazz.getDeclaredMethod(navMethodName, navViewClazz)
-            xposedModule.hook(navMethod).intercept {
-                return@intercept null
-            }
+            xposedModule.hook(navMethod).intercept { return@intercept null }
 
             val methods = clazz.declaredMethods
             for (method in methods) {
@@ -175,14 +162,10 @@ class PydroidHook : AppHook {
                     !Modifier.isAbstract(method.modifiers)
                 ) {
                     try {
-                        xposedModule.hook(method).intercept {
-                            return@intercept true
-                        }
+                        xposedModule.hook(method).intercept { return@intercept true }
                     } catch (_: Throwable) {}
                 }
             }
-            if (logsEnabled) logInfo("Hooks successfully applied to $className")
-
         } catch (t: Throwable) {
             logError("Error hooking class $className", t)
         }
@@ -213,7 +196,6 @@ class PydroidHook : AppHook {
                 }
                 return@intercept result
             }
-
         } catch (t: Throwable) {
             if (logsEnabled) logError("Failed to hook Activity Lifecycle", t)
         }

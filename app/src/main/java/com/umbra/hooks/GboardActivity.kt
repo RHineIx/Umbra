@@ -9,20 +9,25 @@ import android.widget.Button
 import android.widget.EditText
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
+import com.google.android.material.textfield.TextInputLayout
 import com.umbra.hooks.utils.Constants
 import com.umbra.hooks.utils.PrefsManager
 
 @SuppressLint("SetTextI18n")
 class GboardActivity : AppCompatActivity() {
 
+    private lateinit var tilLimit: TextInputLayout
     private lateinit var etLimit: EditText
+    private lateinit var tilRetention: TextInputLayout
     private lateinit var etRetention: EditText
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_gboard)
 
+        tilLimit = findViewById(R.id.tilLimit)
         etLimit = findViewById(R.id.etLimit)
+        tilRetention = findViewById(R.id.tilRetention)
         etRetention = findViewById(R.id.etRetention)
         val btnSave = findViewById<Button>(R.id.btnSave)
 
@@ -35,8 +40,18 @@ class GboardActivity : AppCompatActivity() {
 
     private fun loadSettings() {
         val service = MainActivity.xposedService
-        etLimit.setText(PrefsManager.getInt(service, Constants.KEY_GBOARD_LIMIT, Constants.DEFAULT_GBOARD_LIMIT).toString())
-        etRetention.setText(PrefsManager.getInt(service, Constants.KEY_GBOARD_RETENTION_DAYS, Constants.DEFAULT_GBOARD_RETENTION).toString())
+
+        val limitValue = PrefsManager.getInt(service, Constants.KEY_GBOARD_LIMIT, Constants.DEFAULT_GBOARD_LIMIT).toString()
+        val retentionValue = PrefsManager.getInt(service, Constants.KEY_GBOARD_RETENTION_DAYS, Constants.DEFAULT_GBOARD_RETENTION).toString()
+
+        tilLimit.isHintAnimationEnabled = false
+        tilRetention.isHintAnimationEnabled = false
+
+        etLimit.setText(limitValue)
+        etRetention.setText(retentionValue)
+
+        tilLimit.isHintAnimationEnabled = true
+        tilRetention.isHintAnimationEnabled = true
     }
 
     private fun saveSettings() {

@@ -4,7 +4,7 @@ import io.github.libxposed.api.XposedModule
 import io.github.libxposed.service.XposedService
 
 object PrefsManager {
-    
+
     private const val PREFS_NAME = "umbra_settings"
 
     fun putInt(service: XposedService?, key: String, value: Int): Boolean {

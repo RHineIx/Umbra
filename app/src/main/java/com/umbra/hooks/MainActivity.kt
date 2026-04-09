@@ -103,7 +103,6 @@ class MainActivity : AppCompatActivity() {
                     xposedService = null
                 } catch (_: Throwable) {}
             }
-
             exitProcess(0)
         }
     }
