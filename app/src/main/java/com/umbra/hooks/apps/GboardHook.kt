@@ -12,6 +12,8 @@ import io.github.libxposed.api.XposedModuleInterface
 import org.luckypray.dexkit.DexKitBridge
 import org.luckypray.dexkit.wrap.DexMethod
 import java.lang.reflect.Modifier
+import java.util.concurrent.ExecutorService
+import java.util.concurrent.Executors
 
 @SuppressLint("NewApi")
 class GboardHook : AppHook {
@@ -27,16 +29,23 @@ class GboardHook : AppHook {
 
         // Gboard default retention is 1 hour (3600000 ms)
         private const val GBOARD_DEFAULT_RETENTION_MS = 3600000L
+
+        // Throttling: Prevent spamming the DB with delete queries (30 seconds)
+        private const val CLEANUP_COOLDOWN_MS = 30000L
     }
 
     override val targetPackages = setOf("com.google.android.inputmethod.latin")
 
     @Volatile private var cachedLimit = Constants.DEFAULT_GBOARD_LIMIT
-    @Volatile private var cachedRetentionMs = Constants.DEFAULT_GBOARD_RETENTION * 86400000L // 86400000L = 1 Day
+    @Volatile private var cachedRetentionMs = Constants.DEFAULT_GBOARD_RETENTION * 86400000L // 1 Day
     @Volatile private var logsEnabled = false
+    @Volatile private var lastCleanupTime = 0L
 
     private lateinit var xposedModule: XposedModule
     private val limitPattern = "(?i)limit\\s+\\d+".toRegex()
+
+    // Dedicated executor for background tasks (DexKit and DB I/O) to prevent UI thread blocks
+    private val backgroundExecutor: ExecutorService = Executors.newSingleThreadExecutor()
 
     init {
         try { System.loadLibrary("dexkit") } catch (_: Throwable) {}
@@ -71,7 +80,7 @@ class GboardHook : AppHook {
                         logInfo("Hooks Initializing. Limit: $cachedLimit, Retention: ${cachedRetentionMs / 86400000L} days")
                     }
 
-                    // Pass Context to Provider Hook for proactive deletion
+                    // Pass Context to Provider Hook for proactive background deletion
                     hookClipboardProvider(classLoader, context)
                     handleDynamicAndPrivacyHooks(context, classLoader)
                 } catch (t: Throwable) {
@@ -127,18 +136,27 @@ class GboardHook : AppHook {
 
                 // Proactive Custom Cleanup Strategy (Piggybacking on UI query)
                 if (uri != null) {
-                    val threshold = System.currentTimeMillis() - cachedRetentionMs
-                    try {
-                        val deletedCount = context.contentResolver.delete(
-                            uri,
-                            "timestamp < ?",
-                            arrayOf(threshold.toString())
-                        )
-                        if (deletedCount > 0) {
-                            logInfo("Proactive Cleanup: Deleted $deletedCount expired items.")
+                    val now = System.currentTimeMillis()
+                    // Throttle execution to prevent DB spamming during rapid UI interactions
+                    if (now - lastCleanupTime > CLEANUP_COOLDOWN_MS) {
+                        lastCleanupTime = now
+                        val threshold = now - cachedRetentionMs
+
+                        // Execute DB deletion on a background thread to prevent UI jank
+                        backgroundExecutor.submit {
+                            try {
+                                val deletedCount = context.contentResolver.delete(
+                                    uri,
+                                    "timestamp < ?",
+                                    arrayOf(threshold.toString())
+                                )
+                                if (deletedCount > 0) {
+                                    logInfo("Proactive Cleanup: Deleted $deletedCount expired items asynchronously.")
+                                }
+                            } catch (e: Throwable) {
+                                logError("Proactive Cleanup failed", e)
+                            }
                         }
-                    } catch (e: Throwable) {
-                        logError("Proactive Cleanup failed", e)
                     }
                 }
 
@@ -174,10 +192,11 @@ class GboardHook : AppHook {
             applyDynamicHooks(classLoader, configMethod, cleanupMethod, retentionMethod)
             applyPrivacyHooks(classLoader, metricsClass)
         } else {
-            logInfo("Cache miss. Starting background DexKit search...")
-            Thread {
+            logInfo("Cache miss. Starting background DexKit search via Executor...")
+            // Use controlled executor instead of raw thread
+            backgroundExecutor.submit {
                 performBackgroundSearchAndHook(context, classLoader, versionCode, cachePrefs)
-            }.start()
+            }
         }
     }
 
