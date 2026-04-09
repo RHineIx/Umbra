@@ -14,8 +14,10 @@ import io.github.libxposed.api.XposedModule
 import io.github.libxposed.api.XposedModuleInterface
 import org.luckypray.dexkit.DexKitBridge
 import java.lang.reflect.Modifier
+import java.util.concurrent.ExecutorService
+import java.util.concurrent.Executors
 
-@SuppressLint("NewApi")
+@SuppressLint("NewApi", "DiscouragedApi", "DuplicateCreateDexKit")
 class PydroidHook : AppHook {
 
     companion object {
@@ -31,6 +33,8 @@ class PydroidHook : AppHook {
 
     @Volatile private var logsEnabled = false
     private lateinit var xposedModule: XposedModule
+
+    private val backgroundExecutor: ExecutorService = Executors.newSingleThreadExecutor()
 
     init {
         try { System.loadLibrary("dexkit") } catch (_: Throwable) {}
@@ -58,8 +62,6 @@ class PydroidHook : AppHook {
 
                 try {
                     val context = chain.args[0] as Context
-                    
-                    // Fetch configurations silently via libxposed Remote Preferences
                     refreshConfig()
 
                     if (logsEnabled) logInfo("Context attached. Initializing...")
@@ -100,8 +102,10 @@ class PydroidHook : AppHook {
                 }
             }
         } else {
-            logInfo("Cache miss. Starting synchronous DexKit search...")
-            performSearchAndHookSynchronous(context, classLoader, versionCode, cachePrefs)
+            logInfo("Cache miss. Starting DexKit search via Executor...")
+            backgroundExecutor.submit {
+                performSearchAndHookSynchronous(context, classLoader, versionCode, cachePrefs)
+            }
         }
     }
 
@@ -161,7 +165,7 @@ class PydroidHook : AppHook {
 
             val navMethod = clazz.getDeclaredMethod(navMethodName, navViewClazz)
             xposedModule.hook(navMethod).intercept {
-                return@intercept null 
+                return@intercept null
             }
 
             val methods = clazz.declaredMethods
@@ -172,7 +176,7 @@ class PydroidHook : AppHook {
                 ) {
                     try {
                         xposedModule.hook(method).intercept {
-                            return@intercept true 
+                            return@intercept true
                         }
                     } catch (_: Throwable) {}
                 }

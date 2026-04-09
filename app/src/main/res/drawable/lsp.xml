@@ -1,7 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
-    android:height="512dp"
-    android:width="512dp"
+    xmlns:tools="http://schemas.android.com/tools"
+    tools:ignore="VectorPath,VectorRaster"
+    android:height="24dp"
+    android:width="24dp"
     android:viewportWidth="104.39"
     android:viewportHeight="104.54">
     <path

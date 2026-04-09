@@ -21,6 +21,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlin.system.exitProcess
 
+@SuppressLint("SetTextI18n")
 class MainActivity : AppCompatActivity() {
 
     private lateinit var swGlobalLogs: MaterialSwitch
