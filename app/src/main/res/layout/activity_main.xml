@@ -95,22 +95,13 @@
                 </LinearLayout>
 
                 <ImageView
-                    android:id="@+id/imgStatusWatermarkActive"
+                    android:id="@+id/imgStatusWatermark"
                     android:layout_width="100dp"
                     android:layout_height="100dp"
                     android:layout_marginEnd="-24dp"
                     android:layout_marginBottom="-24dp"
-                    android:src="@drawable/ic_status_check_modern"
-                    app:layout_constraintBottom_toBottomOf="parent"
-                    app:layout_constraintEnd_toEndOf="parent" />
-
-                <ImageView
-                    android:id="@+id/imgStatusWatermarkInactive"
-                    android:layout_width="100dp"
-                    android:layout_height="100dp"
-                    android:layout_marginEnd="-24dp"
-                    android:layout_marginBottom="-24dp"
-                    android:src="@drawable/ic_status_cross_modern"
+                    android:alpha="0.2"
+                    android:src="@drawable/ic_status_animated"
                     app:layout_constraintBottom_toBottomOf="parent"
                     app:layout_constraintEnd_toEndOf="parent" />
 

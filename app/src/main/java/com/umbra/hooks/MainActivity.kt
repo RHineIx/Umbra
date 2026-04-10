@@ -158,9 +158,8 @@ class MainActivity : AppCompatActivity() {
         val cardStatus = findViewById<MaterialCardView>(R.id.cardStatus)
         val tvTitle = findViewById<TextView>(R.id.tvStatusTitle)
         val tvDesc = findViewById<TextView>(R.id.tvStatusDesc)
-        
-        val imgWatermarkActive = findViewById<ImageView>(R.id.imgStatusWatermarkActive)
-        val imgWatermarkInactive = findViewById<ImageView>(R.id.imgStatusWatermarkInactive)
+
+        val imgWatermark = findViewById<ImageView>(R.id.imgStatusWatermark)
 
         val activeBg = getThemeColor(com.google.android.material.R.attr.colorPrimaryContainer)
         val activeContent = getThemeColor(com.google.android.material.R.attr.colorOnPrimaryContainer)
@@ -172,17 +171,13 @@ class MainActivity : AppCompatActivity() {
 
         tvTitle.text = if (isActive) "Module Activated" else "Module Not Active"
         tvDesc.text = if (isActive) "Running in ${fwName ?: "Unknown"} (${fwVersion ?: "Unknown"})" else "Enable in LSPosed and reboot."
+        imgWatermark.isActivated = isActive
 
         if (isFirstLoad) {
             cardStatus.setCardBackgroundColor(targetBg)
             tvTitle.setTextColor(targetContent)
             tvDesc.setTextColor(targetContent)
-            
-            imgWatermarkActive.imageTintList = ColorStateList.valueOf(targetContent)
-            imgWatermarkInactive.imageTintList = ColorStateList.valueOf(targetContent)
-            
-            imgWatermarkActive.alpha = if (isActive) 0.2f else 0f
-            imgWatermarkInactive.alpha = if (isActive) 0f else 0.2f
+            imgWatermark.imageTintList = ColorStateList.valueOf(targetContent)
         } else {
             val currentBg = cardStatus.cardBackgroundColor.defaultColor
             ValueAnimator.ofObject(ArgbEvaluator(), currentBg, targetBg).apply {
@@ -200,14 +195,10 @@ class MainActivity : AppCompatActivity() {
                     val color = animator.animatedValue as Int
                     tvTitle.setTextColor(color)
                     tvDesc.setTextColor(color)
-                    imgWatermarkActive.imageTintList = ColorStateList.valueOf(color)
-                    imgWatermarkInactive.imageTintList = ColorStateList.valueOf(color)
+                    imgWatermark.imageTintList = ColorStateList.valueOf(color)
                 }
                 start()
             }
-
-            imgWatermarkActive.animate().alpha(if (isActive) 0.2f else 0f).setDuration(300).start()
-            imgWatermarkInactive.animate().alpha(if (isActive) 0f else 0.2f).setDuration(300).start()
         }
     }
 
