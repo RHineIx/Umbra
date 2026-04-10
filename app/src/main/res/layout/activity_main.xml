@@ -62,26 +62,22 @@
             android:layout_height="wrap_content"
             android:layout_marginBottom="16dp"
             app:cardCornerRadius="20dp"
-            app:cardElevation="0dp">
+            app:cardElevation="0dp"
+            app:strokeWidth="0dp">
 
-            <LinearLayout
+            <androidx.constraintlayout.widget.ConstraintLayout
                 android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:gravity="center_vertical"
-                android:orientation="horizontal"
-                android:padding="20dp">
-
-                <ImageView
-                    android:id="@+id/imgStatus"
-                    android:layout_width="24dp"
-                    android:layout_height="24dp"
-                    android:src="@drawable/ic_info_outline" />
+                android:layout_height="wrap_content">
 
                 <LinearLayout
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:layout_marginStart="16dp"
-                    android:orientation="vertical">
+                    android:elevation="1dp"
+                    android:gravity="center_vertical"
+                    android:orientation="vertical"
+                    android:padding="24dp"
+                    app:layout_constraintBottom_toBottomOf="parent"
+                    app:layout_constraintTop_toTopOf="parent">
 
                     <TextView
                         android:id="@+id/tvStatusTitle"
@@ -97,7 +93,28 @@
                         android:layout_marginTop="4dp"
                         android:textAppearance="?attr/textAppearanceBodyMedium" />
                 </LinearLayout>
-            </LinearLayout>
+
+                <ImageView
+                    android:id="@+id/imgStatusWatermarkActive"
+                    android:layout_width="100dp"
+                    android:layout_height="100dp"
+                    android:layout_marginEnd="-24dp"
+                    android:layout_marginBottom="-24dp"
+                    android:src="@drawable/ic_status_check_modern"
+                    app:layout_constraintBottom_toBottomOf="parent"
+                    app:layout_constraintEnd_toEndOf="parent" />
+
+                <ImageView
+                    android:id="@+id/imgStatusWatermarkInactive"
+                    android:layout_width="100dp"
+                    android:layout_height="100dp"
+                    android:layout_marginEnd="-24dp"
+                    android:layout_marginBottom="-24dp"
+                    android:src="@drawable/ic_status_cross_modern"
+                    app:layout_constraintBottom_toBottomOf="parent"
+                    app:layout_constraintEnd_toEndOf="parent" />
+
+            </androidx.constraintlayout.widget.ConstraintLayout>
         </com.google.android.material.card.MaterialCardView>
 
         <com.google.android.material.card.MaterialCardView
