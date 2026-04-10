@@ -1,5 +1,7 @@
 package com.umbra.hooks
 
+import android.animation.ArgbEvaluator
+import android.animation.ValueAnimator
 import android.annotation.SuppressLint
 import android.content.Intent
 import android.content.res.ColorStateList
@@ -25,6 +27,7 @@ import kotlin.system.exitProcess
 class MainActivity : AppCompatActivity() {
 
     private lateinit var swGlobalLogs: MaterialSwitch
+    private var currentActiveState: Boolean? = null
 
     companion object {
         @Volatile
@@ -146,35 +149,56 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun updateUI(isActive: Boolean, fwName: String? = null, fwVersion: String? = null) {
-        val cardStatus = findViewById<MaterialCardView>(R.id.cardStatus)
-        val imgStatus = findViewById<ImageView>(R.id.imgStatus)
-        val tvTitle = findViewById<TextView>(R.id.tvStatusTitle)
-        val tvDesc = findViewById<TextView>(R.id.tvStatusDesc)
+        if (currentActiveState == isActive) return
+        val isFirstLoad = currentActiveState == null
+        currentActiveState = isActive
 
         setupGlobalLogs()
 
-        if (isActive) {
-            val colorContainer = getThemeColor(com.google.android.material.R.attr.colorPrimaryContainer)
-            val colorOnContainer = getThemeColor(com.google.android.material.R.attr.colorOnPrimaryContainer)
+        val cardStatus = findViewById<MaterialCardView>(R.id.cardStatus)
+        val tvTitle = findViewById<TextView>(R.id.tvStatusTitle)
+        val tvDesc = findViewById<TextView>(R.id.tvStatusDesc)
 
-            cardStatus.setCardBackgroundColor(colorContainer)
-            imgStatus.imageTintList = ColorStateList.valueOf(colorOnContainer)
-            tvTitle.setTextColor(colorOnContainer)
-            tvDesc.setTextColor(colorOnContainer)
+        val imgWatermark = findViewById<ImageView>(R.id.imgStatusWatermark)
 
-            tvTitle.text = "Module Activated"
-            tvDesc.text = "Running in ${fwName ?: "Unknown"} (${fwVersion ?: "Unknown"})"
+        val activeBg = getThemeColor(com.google.android.material.R.attr.colorPrimaryContainer)
+        val activeContent = getThemeColor(com.google.android.material.R.attr.colorOnPrimaryContainer)
+        val inactiveBg = getThemeColor(com.google.android.material.R.attr.colorErrorContainer)
+        val inactiveContent = getThemeColor(com.google.android.material.R.attr.colorOnErrorContainer)
+
+        val targetBg = if (isActive) activeBg else inactiveBg
+        val targetContent = if (isActive) activeContent else inactiveContent
+
+        tvTitle.text = if (isActive) "Module Activated" else "Module Not Active"
+        tvDesc.text = if (isActive) "Running in ${fwName ?: "Unknown"} (${fwVersion ?: "Unknown"})" else "Enable in LSPosed and reboot."
+        imgWatermark.isActivated = isActive
+
+        if (isFirstLoad) {
+            cardStatus.setCardBackgroundColor(targetBg)
+            tvTitle.setTextColor(targetContent)
+            tvDesc.setTextColor(targetContent)
+            imgWatermark.imageTintList = ColorStateList.valueOf(targetContent)
         } else {
-            val colorContainer = getThemeColor(com.google.android.material.R.attr.colorErrorContainer)
-            val colorOnContainer = getThemeColor(com.google.android.material.R.attr.colorOnErrorContainer)
+            val currentBg = cardStatus.cardBackgroundColor.defaultColor
+            ValueAnimator.ofObject(ArgbEvaluator(), currentBg, targetBg).apply {
+                duration = 400
+                addUpdateListener { animator ->
+                    cardStatus.setCardBackgroundColor(animator.animatedValue as Int)
+                }
+                start()
+            }
 
-            cardStatus.setCardBackgroundColor(colorContainer)
-            imgStatus.imageTintList = ColorStateList.valueOf(colorOnContainer)
-            tvTitle.setTextColor(colorOnContainer)
-            tvDesc.setTextColor(colorOnContainer)
-
-            tvTitle.text = "Module Not Active"
-            tvDesc.text = "Enable in LSPosed and reboot."
+            val currentContentColor = tvTitle.currentTextColor
+            ValueAnimator.ofObject(ArgbEvaluator(), currentContentColor, targetContent).apply {
+                duration = 400
+                addUpdateListener { animator ->
+                    val color = animator.animatedValue as Int
+                    tvTitle.setTextColor(color)
+                    tvDesc.setTextColor(color)
+                    imgWatermark.imageTintList = ColorStateList.valueOf(color)
+                }
+                start()
+            }
         }
     }
 
