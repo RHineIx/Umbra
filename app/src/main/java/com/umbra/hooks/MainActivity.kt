@@ -5,6 +5,7 @@ import android.animation.ValueAnimator
 import android.annotation.SuppressLint
 import android.content.Intent
 import android.content.res.ColorStateList
+import android.net.Uri
 import android.os.Bundle
 import android.util.TypedValue
 import android.widget.ImageView
@@ -13,6 +14,7 @@ import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import androidx.lifecycle.lifecycleScope
 import com.google.android.material.card.MaterialCardView
+import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import com.google.android.material.materialswitch.MaterialSwitch
 import com.umbra.hooks.utils.Constants
 import com.umbra.hooks.utils.PrefsManager
@@ -77,7 +79,38 @@ class MainActivity : AppCompatActivity() {
             openLSPosedManager()
         }
 
+        // Setup About Button Click Listener
+        findViewById<ImageView>(R.id.btnAbout).setOnClickListener {
+            showAboutDialog()
+        }
+
         swGlobalLogs = findViewById(R.id.swGlobalLogs)
+    }
+
+    /**
+     * Constructs and displays a Material 3 About Dialog.
+     */
+    private fun showAboutDialog() {
+        MaterialAlertDialogBuilder(this)
+            .setTitle(getString(R.string.app_name))
+            .setMessage("Developed by @RHineIx\n\nUmbra is an LSPosed module designed to enhance and modify app behaviors.")
+            .setPositiveButton("Telegram") { _, _ ->
+                openTelegramProfile()
+            }
+            .setNegativeButton("Close", null)
+            .show()
+    }
+
+    /**
+     * Safely opens the developer's Telegram profile via external Intent.
+     */
+    private fun openTelegramProfile() {
+        try {
+            val telegramIntent = Intent(Intent.ACTION_VIEW, Uri.parse("https://t.me/RHineIx"))
+            startActivity(telegramIntent)
+        } catch (e: Exception) {
+            Toast.makeText(this, "Telegram is not installed or no web browser found.", Toast.LENGTH_SHORT).show()
+        }
     }
 
     override fun onResume() {
