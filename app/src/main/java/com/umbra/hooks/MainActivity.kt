@@ -11,13 +11,15 @@ import android.util.TypedValue
 import android.widget.ImageView
 import android.widget.TextView
 import android.widget.Toast
+import androidx.activity.viewModels
 import androidx.appcompat.app.AppCompatActivity
+import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.lifecycleScope
+import androidx.lifecycle.repeatOnLifecycle
 import com.google.android.material.card.MaterialCardView
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import com.google.android.material.materialswitch.MaterialSwitch
-import com.umbra.hooks.utils.Constants
-import com.umbra.hooks.utils.PrefsManager
+import com.umbra.hooks.ui.MainViewModel
 import io.github.libxposed.service.XposedService
 import io.github.libxposed.service.XposedServiceHelper
 import kotlinx.coroutines.Dispatchers
@@ -28,6 +30,7 @@ import kotlin.system.exitProcess
 @SuppressLint("SetTextI18n")
 class MainActivity : AppCompatActivity() {
 
+    private val viewModel: MainViewModel by viewModels()
     private lateinit var swGlobalLogs: MaterialSwitch
     private var currentActiveState: Boolean? = null
 
@@ -40,21 +43,17 @@ class MainActivity : AppCompatActivity() {
 
         @SuppressLint("StaticFieldLeak")
         private var currentActivity: MainActivity? = null
+    }
 
-        private val globalServiceListener = object : XposedServiceHelper.OnServiceListener {
-            override fun onServiceBind(service: XposedService) {
-                xposedService = service
-                currentActivity?.runOnUiThread {
-                    currentActivity?.updateUI(true, service.frameworkName, service.frameworkVersion)
-                }
-            }
+    private val globalServiceListener = object : XposedServiceHelper.OnServiceListener {
+        override fun onServiceBind(service: XposedService) {
+            xposedService = service
+            viewModel.updateServiceStatus(service)
+        }
 
-            override fun onServiceDied(service: XposedService) {
-                xposedService = null
-                currentActivity?.runOnUiThread {
-                    currentActivity?.updateUI(false)
-                }
-            }
+        override fun onServiceDied(service: XposedService) {
+            xposedService = null
+            viewModel.updateServiceStatus(null)
         }
     }
 
@@ -71,6 +70,11 @@ class MainActivity : AppCompatActivity() {
             } catch (_: Throwable) {}
         }
 
+        initViews()
+        observeState()
+    }
+
+    private fun initViews() {
         findViewById<MaterialCardView>(R.id.cardGboard).setOnClickListener {
             startActivity(Intent(this, GboardActivity::class.java))
         }
@@ -79,131 +83,64 @@ class MainActivity : AppCompatActivity() {
             openLSPosedManager()
         }
 
-        // Setup About Button Click Listener
         findViewById<ImageView>(R.id.btnAbout).setOnClickListener {
             showAboutDialog()
         }
 
         swGlobalLogs = findViewById(R.id.swGlobalLogs)
+        swGlobalLogs.setOnCheckedChangeListener { _, isChecked ->
+            viewModel.toggleLogs(isChecked)
+        }
     }
 
-    /**
-     * Constructs and displays a Material 3 About Dialog.
-     */
+    private fun observeState() {
+        lifecycleScope.launch {
+            repeatOnLifecycle(Lifecycle.State.STARTED) {
+                viewModel.uiState.collect { state ->
+                    updateUI(state.isServiceActive, state.frameworkName, state.frameworkVersion)
+                    if (swGlobalLogs.isChecked != state.logsEnabled) {
+                        swGlobalLogs.isChecked = state.logsEnabled
+                    }
+                }
+            }
+        }
+    }
+
     private fun showAboutDialog() {
         MaterialAlertDialogBuilder(this)
+            .setIcon(R.mipmap.ic_launcher_round)
             .setTitle(getString(R.string.app_name))
-            .setMessage("Developed by @RHineIx\n\nUmbra is an LSPosed module designed to enhance and modify app behaviors.")
-            .setPositiveButton("Telegram") { _, _ ->
-                openTelegramProfile()
-            }
+            .setMessage("Developed by @RHineIx\n\nUmbra is an LSPosed module focusing on privacy, efficiency, and advanced app behavior modification.")
+            .setPositiveButton("Telegram") { _, _ -> openTelegramProfile() }
             .setNegativeButton("Close", null)
             .show()
     }
 
-    /**
-     * Safely opens the developer's Telegram profile via external Intent.
-     */
     private fun openTelegramProfile() {
         try {
-            val telegramIntent = Intent(Intent.ACTION_VIEW, Uri.parse("https://t.me/RHineIx"))
-            startActivity(telegramIntent)
+            startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://t.me/RHineIx")))
         } catch (e: Exception) {
-            Toast.makeText(this, "Telegram is not installed or no web browser found.", Toast.LENGTH_SHORT).show()
+            Toast.makeText(this, "Telegram or Browser not found", Toast.LENGTH_SHORT).show()
         }
     }
 
-    override fun onResume() {
-        super.onResume()
-        currentActivity = this
-
-        val service = xposedService
-        if (service != null) {
-            updateUI(true, service.frameworkName, service.frameworkVersion)
-        } else {
-            updateUI(false)
-        }
-    }
-
-    override fun onDestroy() {
-        super.onDestroy()
-
-        if (currentActivity == this) {
-            currentActivity = null
-        }
-
-        if (isFinishing) {
-            if (isListenerRegistered) {
-                try {
-                    isListenerRegistered = false
-                    xposedService = null
-                } catch (_: Throwable) {}
-            }
-            exitProcess(0)
-        }
-    }
-
-    private fun openLSPosedManager() {
-        lifecycleScope.launch(Dispatchers.IO) {
-            try {
-                val command = arrayOf(
-                    "su",
-                    "-c",
-                    "am broadcast -a android.telephony.action.SECRET_CODE -d android_secret_code://5776733 android"
-                )
-                val process = Runtime.getRuntime().exec(command)
-                val exitCode = process.waitFor()
-
-                if (exitCode != 0) {
-                    withContext(Dispatchers.Main) {
-                        Toast.makeText(this@MainActivity, "Root permission denied.", Toast.LENGTH_SHORT).show()
-                    }
-                }
-            } catch (_: Exception) {
-                withContext(Dispatchers.Main) {
-                    Toast.makeText(this@MainActivity, "Device is not rooted.", Toast.LENGTH_SHORT).show()
-                }
-            }
-        }
-    }
-
-    private fun setupGlobalLogs() {
-        val isEnabled = PrefsManager.getInt(xposedService, Constants.KEY_GLOBAL_LOGS, 0) == 1
-        swGlobalLogs.setOnCheckedChangeListener(null)
-        swGlobalLogs.isChecked = isEnabled
-
-        swGlobalLogs.setOnCheckedChangeListener { _, isChecked ->
-            val success = PrefsManager.putInt(xposedService, Constants.KEY_GLOBAL_LOGS, if (isChecked) 1 else 0)
-            if (!success && isChecked) {
-                swGlobalLogs.isChecked = false
-                Toast.makeText(this, "Xposed service disconnected", Toast.LENGTH_SHORT).show()
-            }
-        }
-    }
-
-    private fun updateUI(isActive: Boolean, fwName: String? = null, fwVersion: String? = null) {
+    private fun updateUI(isActive: Boolean, fwName: String?, fwVersion: String?) {
         if (currentActiveState == isActive) return
         val isFirstLoad = currentActiveState == null
         currentActiveState = isActive
 
-        setupGlobalLogs()
-
         val cardStatus = findViewById<MaterialCardView>(R.id.cardStatus)
         val tvTitle = findViewById<TextView>(R.id.tvStatusTitle)
         val tvDesc = findViewById<TextView>(R.id.tvStatusDesc)
-
         val imgWatermark = findViewById<ImageView>(R.id.imgStatusWatermark)
 
-        val activeBg = getThemeColor(com.google.android.material.R.attr.colorPrimaryContainer)
-        val activeContent = getThemeColor(com.google.android.material.R.attr.colorOnPrimaryContainer)
-        val inactiveBg = getThemeColor(com.google.android.material.R.attr.colorErrorContainer)
-        val inactiveContent = getThemeColor(com.google.android.material.R.attr.colorOnErrorContainer)
-
-        val targetBg = if (isActive) activeBg else inactiveBg
-        val targetContent = if (isActive) activeContent else inactiveContent
+        val targetBg = if (isActive) getThemeColor(com.google.android.material.R.attr.colorPrimaryContainer) 
+                       else getThemeColor(com.google.android.material.R.attr.colorErrorContainer)
+        val targetContent = if (isActive) getThemeColor(com.google.android.material.R.attr.colorOnPrimaryContainer)
+                            else getThemeColor(com.google.android.material.R.attr.colorOnErrorContainer)
 
         tvTitle.text = if (isActive) "Module Activated" else "Module Not Active"
-        tvDesc.text = if (isActive) "Running in ${fwName ?: "Unknown"} (${fwVersion ?: "Unknown"})" else "Enable in LSPosed and reboot."
+        tvDesc.text = if (isActive) "Running in $fwName ($fwVersion)" else "Enable in LSPosed and reboot."
         imgWatermark.isActivated = isActive
 
         if (isFirstLoad) {
@@ -212,26 +149,34 @@ class MainActivity : AppCompatActivity() {
             tvDesc.setTextColor(targetContent)
             imgWatermark.imageTintList = ColorStateList.valueOf(targetContent)
         } else {
-            val currentBg = cardStatus.cardBackgroundColor.defaultColor
-            ValueAnimator.ofObject(ArgbEvaluator(), currentBg, targetBg).apply {
-                duration = 400
-                addUpdateListener { animator ->
-                    cardStatus.setCardBackgroundColor(animator.animatedValue as Int)
-                }
-                start()
-            }
+            animateColorChange(cardStatus, tvTitle, tvDesc, imgWatermark, targetBg, targetContent)
+        }
+    }
 
-            val currentContentColor = tvTitle.currentTextColor
-            ValueAnimator.ofObject(ArgbEvaluator(), currentContentColor, targetContent).apply {
-                duration = 400
-                addUpdateListener { animator ->
-                    val color = animator.animatedValue as Int
-                    tvTitle.setTextColor(color)
-                    tvDesc.setTextColor(color)
-                    imgWatermark.imageTintList = ColorStateList.valueOf(color)
-                }
-                start()
+    private fun animateColorChange(card: MaterialCardView, title: TextView, desc: TextView, img: ImageView, bg: Int, content: Int) {
+        ValueAnimator.ofObject(ArgbEvaluator(), card.cardBackgroundColor.defaultColor, bg).apply {
+            duration = 400
+            addUpdateListener { card.setCardBackgroundColor(it.animatedValue as Int) }
+            start()
+        }
+        ValueAnimator.ofObject(ArgbEvaluator(), title.currentTextColor, content).apply {
+            duration = 400
+            addUpdateListener {
+                val c = it.animatedValue as Int
+                title.setTextColor(c)
+                desc.setTextColor(c)
+                img.imageTintList = ColorStateList.valueOf(c)
             }
+            start()
+        }
+    }
+
+    private fun openLSPosedManager() {
+        lifecycleScope.launch(Dispatchers.IO) {
+            try {
+                val process = Runtime.getRuntime().exec(arrayOf("su", "-c", "am broadcast -a android.telephony.action.SECRET_CODE -d android_secret_code://5776733 android"))
+                if (process.waitFor() != 0) withContext(Dispatchers.Main) { Toast.makeText(this@MainActivity, "Root denied", Toast.LENGTH_SHORT).show() }
+            } catch (_: Exception) { withContext(Dispatchers.Main) { Toast.makeText(this@MainActivity, "Device not rooted", Toast.LENGTH_SHORT).show() } }
         }
     }
 
@@ -239,5 +184,18 @@ class MainActivity : AppCompatActivity() {
         val value = TypedValue()
         theme.resolveAttribute(attr, value, true)
         return value.data
+    }
+
+    override fun onResume() {
+        super.onResume()
+        currentActivity = this
+    }
+
+    override fun onDestroy() {
+        super.onDestroy()
+        if (currentActivity == this) {
+            currentActivity = null
+        }
+        if (isFinishing) exitProcess(0)
     }
 }

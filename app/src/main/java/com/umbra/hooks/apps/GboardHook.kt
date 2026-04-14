@@ -4,7 +4,10 @@ import android.annotation.SuppressLint
 import android.content.Context
 import android.content.SharedPreferences
 import android.net.Uri
+import android.os.Handler
+import android.os.Looper
 import android.util.Log
+import android.widget.Toast
 import com.umbra.hooks.core.AppHook
 import com.umbra.hooks.utils.Constants
 import io.github.libxposed.api.XposedModule
@@ -12,8 +15,10 @@ import io.github.libxposed.api.XposedModuleInterface
 import org.luckypray.dexkit.DexKitBridge
 import org.luckypray.dexkit.wrap.DexMethod
 import java.lang.reflect.Modifier
+import java.util.concurrent.CountDownLatch
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
+import java.util.concurrent.TimeUnit
 
 @SuppressLint("NewApi")
 class GboardHook : AppHook {
@@ -26,9 +31,7 @@ class GboardHook : AppHook {
         private const val KEY_METHOD_CLEANUP = "method_cleanup_list"
         private const val KEY_CLASS_METRICS = "class_metrics_processor"
         private const val KEY_METHOD_RETENTION = "method_retention_logic"
-
-        private const val GBOARD_DEFAULT_RETENTION_MS = 3600000L
-        private const val CLEANUP_COOLDOWN_MS = 30000L
+        private const val DEXKIT_TIMEOUT_MS = 2500L
     }
 
     override val targetPackages = setOf("com.google.android.inputmethod.latin")
@@ -84,13 +87,8 @@ class GboardHook : AppHook {
         try {
             val prefs = xposedModule.getRemotePreferences(Constants.PREFS_FILE)
             refreshConfig(prefs)
-
-            prefs.registerOnSharedPreferenceChangeListener { p, _ ->
-                refreshConfig(p)
-            }
-        } catch (t: Throwable) {
-            logError("Failed to setup reactive prefs", t)
-        }
+            prefs.registerOnSharedPreferenceChangeListener { p, _ -> refreshConfig(p) }
+        } catch (t: Throwable) { logError("Reactive prefs failed", t) }
     }
 
     private fun refreshConfig(prefs: SharedPreferences) {
@@ -103,47 +101,28 @@ class GboardHook : AppHook {
     private fun hookClipboardProvider(classLoader: ClassLoader, context: Context) {
         try {
             val providerClass = classLoader.loadClass("com.google.android.apps.inputmethod.libs.clipboard.ClipboardContentProvider")
-            val queryMethod = providerClass.getDeclaredMethod(
-                "query",
-                Uri::class.java,
-                Array<String>::class.java,
-                String::class.java,
-                Array<String>::class.java,
-                String::class.java
-            )
+            val queryMethod = providerClass.getDeclaredMethod("query", Uri::class.java, Array<String>::class.java, String::class.java, Array<String>::class.java, String::class.java)
 
             xposedModule.hook(queryMethod).intercept { chain ->
-                val originalArgs = chain.args
-                val uri = originalArgs[0] as? Uri
-                val sortOrder = originalArgs[4]?.toString() ?: ""
+                val uri = chain.args[0] as? Uri
+                val sortOrder = chain.args[4]?.toString() ?: ""
 
                 if (uri != null) {
                     val now = System.currentTimeMillis()
-                    if (now - lastCleanupTime > CLEANUP_COOLDOWN_MS) {
+                    if (now - lastCleanupTime > 30000L) {
                         lastCleanupTime = now
-                        val threshold = now - cachedRetentionMs
-
                         backgroundExecutor.submit {
-                            try {
-                                context.contentResolver.delete(
-                                    uri,
-                                    "timestamp < ?",
-                                    arrayOf(threshold.toString())
-                                )
-                            } catch (e: Throwable) {
-                                logError("Proactive Cleanup failed", e)
-                            }
+                            try { context.contentResolver.delete(uri, "timestamp < ?", arrayOf((now - cachedRetentionMs).toString())) } 
+                            catch (e: Throwable) { logError("Cleanup failed", e) }
                         }
                     }
                 }
 
                 if (limitPattern.containsMatchIn(sortOrder)) {
-                    val newSortOrder = sortOrder.replace(limitPattern, "LIMIT $cachedLimit")
-                    val newArgs = originalArgs.toTypedArray()
-                    newArgs[4] = newSortOrder
+                    val newArgs = chain.args.toTypedArray()
+                    newArgs[4] = sortOrder.replace(limitPattern, "LIMIT $cachedLimit")
                     return@intercept chain.proceed(newArgs)
                 }
-
                 return@intercept chain.proceed()
             }
         } catch (t: Throwable) { logError("Provider hook error", t) }
@@ -151,145 +130,75 @@ class GboardHook : AppHook {
 
     private fun handleDynamicAndPrivacyHooks(context: Context, classLoader: ClassLoader) {
         val cachePrefs = context.getSharedPreferences(PREFS_CACHE, Context.MODE_PRIVATE)
-
-        @Suppress("DEPRECATION")
         val versionCode = try { context.packageManager.getPackageInfo(context.packageName, 0).versionCode } catch (_: Exception) { -1 }
-
-        val cachedVersion = cachePrefs.getInt(KEY_VERSION, -1)
-        val isSameVersion = (versionCode != -1 && versionCode == cachedVersion)
+        val isSameVersion = (versionCode != -1 && versionCode == cachePrefs.getInt(KEY_VERSION, -1))
 
         if (isSameVersion) {
-            applyDynamicHooks(
-                classLoader,
-                cachePrefs.getString(KEY_METHOD_CONFIG, null),
-                cachePrefs.getString(KEY_METHOD_CLEANUP, null),
-                cachePrefs.getString(KEY_METHOD_RETENTION, null)
-            )
+            applyDynamicHooks(classLoader, cachePrefs.getString(KEY_METHOD_CONFIG, null), cachePrefs.getString(KEY_METHOD_CLEANUP, null), cachePrefs.getString(KEY_METHOD_RETENTION, null))
             applyPrivacyHooks(classLoader, cachePrefs.getString(KEY_CLASS_METRICS, null))
         } else {
+            // Solve Race Condition: Block main thread for a limited time during first update
+            val latch = CountDownLatch(1)
             backgroundExecutor.submit {
                 performBackgroundSearchAndHook(context, classLoader, versionCode, cachePrefs)
+                latch.countDown()
             }
+            try {
+                if (!latch.await(DEXKIT_TIMEOUT_MS, TimeUnit.MILLISECONDS)) {
+                    Handler(Looper.getMainLooper()).post {
+                        Toast.makeText(context, "Umbra: Updating offsets, please restart app for full protection.", Toast.LENGTH_LONG).show()
+                    }
+                }
+            } catch (_: InterruptedException) {}
         }
     }
 
-    private fun performBackgroundSearchAndHook(
-        context: Context,
-        classLoader: ClassLoader,
-        versionCode: Int,
-        cachePrefs: SharedPreferences
-    ) {
-        var configMethod: String? = null
-        var cleanupMethod: String? = null
-        var metricsClass: String? = null
-        var retentionMethod: String? = null
-
+    private fun performBackgroundSearchAndHook(context: Context, classLoader: ClassLoader, versionCode: Int, cachePrefs: SharedPreferences) {
         try {
-            val apkPath = context.applicationInfo.sourceDir
-            DexKitBridge.create(apkPath).use { bridge ->
-                val adapterClassData = bridge.findClass {
-                    matcher { usingStrings("com/google/android/apps/inputmethod/libs/clipboard/ClipboardAdapter") }
-                }.firstOrNull()
+            DexKitBridge.create(context.applicationInfo.sourceDir).use { bridge ->
+                val adapterClass = bridge.findClass { matcher { usingStrings("com/google/android/apps/inputmethod/libs/clipboard/ClipboardAdapter") } }.firstOrNull()
+                val cleanup = if (adapterClass != null) bridge.findMethod { matcher { returnType("void"); usingNumbers(5) } }.firstOrNull { it.className == adapterClass.name }?.toDexMethod()?.serialize() else null
+                val retention = bridge.findMethod { matcher { usingNumbers(3600000L) } }.firstOrNull()?.toDexMethod()?.serialize()
+                val config = bridge.findMethod { matcher { usingStrings("Invalid flag:"); returnType("java.lang.Object") } }.firstOrNull()?.toDexMethod()?.serialize()
+                val metrics = bridge.findClass { matcher { usingStrings("UserMetrics", "Failed to process metrics") } }.firstOrNull()?.name
 
-                if (adapterClassData != null) {
-                    cleanupMethod = bridge.findMethod {
-                        matcher {
-                            returnType("void")
-                            usingNumbers(5)
-                        }
-                    }.firstOrNull { it.className == adapterClassData.name }?.toDexMethod()?.serialize()
-                }
-
-                retentionMethod = bridge.findMethod {
-                    matcher { usingNumbers(GBOARD_DEFAULT_RETENTION_MS) }
-                }.firstOrNull()?.toDexMethod()?.serialize()
-
-                configMethod = bridge.findMethod {
-                    matcher {
-                        usingStrings("Invalid flag:")
-                        returnType("java.lang.Object")
-                    }
-                }.firstOrNull()?.toDexMethod()?.serialize()
-
-                metricsClass = bridge.findClass {
-                    matcher { usingStrings("UserMetrics", "Failed to process metrics") }
-                }.firstOrNull()?.name
+                cachePrefs.edit().putInt(KEY_VERSION, versionCode).putString(KEY_METHOD_CONFIG, config).putString(KEY_METHOD_CLEANUP, cleanup).putString(KEY_CLASS_METRICS, metrics).putString(KEY_METHOD_RETENTION, retention).apply()
+                applyDynamicHooks(classLoader, config, cleanup, retention)
+                applyPrivacyHooks(classLoader, metrics)
             }
-
-            cachePrefs.edit()
-                .putInt(KEY_VERSION, versionCode)
-                .putString(KEY_METHOD_CONFIG, configMethod)
-                .putString(KEY_METHOD_CLEANUP, cleanupMethod)
-                .putString(KEY_CLASS_METRICS, metricsClass)
-                .putString(KEY_METHOD_RETENTION, retentionMethod)
-                .apply()
-
-            applyDynamicHooks(classLoader, configMethod, cleanupMethod, retentionMethod)
-            applyPrivacyHooks(classLoader, metricsClass)
-        } catch (t: Throwable) {
-            logError("DexKit background init error", t)
-        }
+        } catch (t: Throwable) { logError("DexKit update error", t) }
     }
 
-    private fun applyDynamicHooks(
-        classLoader: ClassLoader,
-        configMethodStr: String?,
-        cleanupMethodStr: String?,
-        retentionMethodStr: String?
-    ) {
-        configMethodStr?.let {
-            try {
-                val dm = DexMethod(it)
-                val clazz = classLoader.loadClass(dm.className)
-                val method = clazz.declaredMethods.first { m -> m.name == dm.name }
+    private fun applyDynamicHooks(classLoader: ClassLoader, config: String?, cleanup: String?, retention: String?) {
+        config?.let { try {
+            val dm = DexMethod(it)
+            val method = classLoader.loadClass(dm.className).declaredMethods.first { m -> m.name == dm.name }
+            xposedModule.hook(method).intercept { chain ->
+                val name = try {
+                    val f = chain.thisObject?.javaClass?.declaredFields?.firstOrNull { it.type == String::class.java }
+                    f?.isAccessible = true
+                    f?.get(chain.thisObject)?.toString() ?: ""
+                } catch (_: Exception) { "" }
+                if (name == "enable_clipboard_entity_extraction" || name == "enable_clipboard_query_refactoring") false else chain.proceed()
+            }
+        } catch (_: Throwable) {} }
 
-                xposedModule.hook(method).intercept { chain ->
-                    val name = try {
-                        val fields = chain.thisObject?.javaClass?.declaredFields ?: emptyArray()
-                        val stringField = fields.firstOrNull { f -> f.type == String::class.java }
-                        stringField?.isAccessible = true
-                        stringField?.get(chain.thisObject)?.toString() ?: ""
-                    } catch (_: Exception) { "" }
+        cleanup?.let { try {
+            val dm = DexMethod(it)
+            xposedModule.hook(classLoader.loadClass(dm.className).getDeclaredMethod(dm.name)).intercept { null }
+        } catch (_: Throwable) {} }
 
-                    if (name == "enable_clipboard_entity_extraction" || name == "enable_clipboard_query_refactoring") {
-                        return@intercept false
-                    }
-                    return@intercept chain.proceed()
-                }
-            } catch (_: Throwable) {}
-        }
-
-        cleanupMethodStr?.let {
-            try {
-                val dm = DexMethod(it)
-                val clazz = classLoader.loadClass(dm.className)
-                val method = clazz.declaredMethods.first { m -> m.name == dm.name }
-
-                xposedModule.hook(method).intercept { return@intercept null }
-            } catch (_: Throwable) { }
-        }
-
-        retentionMethodStr?.let {
-            try {
-                val dm = DexMethod(it)
-                val clazz = classLoader.loadClass(dm.className)
-                val method = clazz.declaredMethods.first { m -> m.name == dm.name }
-
-                xposedModule.hook(method).intercept { return@intercept null }
-            } catch (_: Throwable) { }
-        }
+        retention?.let { try {
+            val dm = DexMethod(it)
+            xposedModule.hook(classLoader.loadClass(dm.className).getDeclaredMethod(dm.name)).intercept { null }
+        } catch (_: Throwable) {} }
     }
 
-    private fun applyPrivacyHooks(classLoader: ClassLoader, metricsClassStr: String?) {
-        metricsClassStr?.let {
-            try {
-                val clazz = classLoader.loadClass(it)
-                clazz.declaredMethods.forEach { method ->
-                    if (Modifier.isPublic(method.modifiers)) {
-                        xposedModule.hook(method).intercept { return@intercept null }
-                    }
-                }
-            } catch (_: Throwable) {}
-        }
+    private fun applyPrivacyHooks(classLoader: ClassLoader, metricsClass: String?) {
+        metricsClass?.let { try {
+            classLoader.loadClass(it).declaredMethods.forEach { m ->
+                if (Modifier.isPublic(m.modifiers)) xposedModule.hook(m).intercept { null }
+            }
+        } catch (_: Throwable) {} }
     }
 }

@@ -1,5 +1,5 @@
 plugins {
-    id("com.android.application")
+    alias(libs.plugins.android.application)
 }
 
 android {
@@ -16,7 +16,10 @@ android {
         ndk {
             abiFilters.add("arm64-v8a")
         }
-        resourceConfigurations.addAll(listOf("en"))
+    }
+
+    androidResources {
+        localeFilters += "en"
     }
 
     signingConfigs {
@@ -61,7 +64,6 @@ android {
             excludes += "LICENSE.txt"
         }
         jniLibs {
-            // Required for Android 17: Native libraries must remain uncompressed
             useLegacyPackaging = true
         }
     }
@@ -72,17 +74,16 @@ android {
     }
 }
 
-kotlin {
-    compilerOptions {
-        jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_17)
-    }
-}
-
 dependencies {
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.appcompat)
     implementation(libs.material)
     implementation(libs.androidx.constraintlayout)
+
+    // Lifecycle, ViewModel, and Activity KTX for Clean Architecture
+    implementation("androidx.lifecycle:lifecycle-viewmodel-ktx:2.8.6")
+    implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.8.6")
+    implementation("androidx.activity:activity-ktx:1.9.3")
 
     compileOnly(libs.libxposed.api)
     implementation(libs.libxposed.service)

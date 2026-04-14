@@ -4,9 +4,11 @@ import android.annotation.SuppressLint
 import android.app.Activity
 import android.content.Context
 import android.content.SharedPreferences
+import android.os.Handler
 import android.util.Log
 import android.view.View
 import android.view.ViewGroup
+import android.widget.Toast
 import com.umbra.hooks.core.AppHook
 import com.umbra.hooks.utils.Constants
 import com.umbra.hooks.utils.PrefsManager
@@ -14,10 +16,12 @@ import io.github.libxposed.api.XposedModule
 import io.github.libxposed.api.XposedModuleInterface
 import org.luckypray.dexkit.DexKitBridge
 import java.lang.reflect.Modifier
+import java.util.concurrent.CountDownLatch
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
+import java.util.concurrent.TimeUnit
 
-@SuppressLint("NewApi", "DiscouragedApi", "DuplicateCreateDexKit")
+@SuppressLint("NewApi", "DiscouragedApi")
 class PydroidHook : AppHook {
 
     companion object {
@@ -27,6 +31,7 @@ class PydroidHook : AppHook {
         private const val PREFS_CACHE = "umbra_pydroid_cache"
         private const val KEY_VERSION = "pydroid_version"
         private const val KEY_HOOK_TARGETS = "pydroid_hook_targets"
+        private const val DEXKIT_TIMEOUT_MS = 2500L
     }
 
     override val targetPackages = setOf("ru.iiec.pydroid3")
@@ -37,15 +42,6 @@ class PydroidHook : AppHook {
 
     init {
         try { System.loadLibrary("dexkit") } catch (_: Throwable) {}
-    }
-
-    private fun logInfo(message: String) {
-        if (logsEnabled) xposedModule.log(Log.INFO, TAG, message)
-    }
-
-    private fun logError(message: String, t: Throwable? = null) {
-        if (t != null) xposedModule.log(Log.ERROR, TAG, message, t)
-        else xposedModule.log(Log.ERROR, TAG, message)
     }
 
     override fun handleLoadPackage(module: XposedModule, param: XposedModuleInterface.PackageLoadedParam) {
@@ -60,176 +56,103 @@ class PydroidHook : AppHook {
                 val result = chain.proceed()
                 try {
                     val context = chain.args[0] as Context
-                    refreshConfig()
+                    logsEnabled = PrefsManager.getHookInt(xposedModule, Constants.KEY_GLOBAL_LOGS, 0) == 1
                     handleDynamicHooks(context, classLoader)
-                } catch (t: Throwable) {
-                    logError("Fatal Error in attach", t)
-                }
+                } catch (t: Throwable) { logError("Fatal Error in attach", t) }
                 return@intercept result
             }
-        } catch (t: Throwable) {
-            logError("Failed to hook Application.attach", t)
-        }
+        } catch (t: Throwable) { logError("Failed Application.attach hook", t) }
 
         hookActivityLifecycle(classLoader)
     }
 
-    private fun refreshConfig() {
-        logsEnabled = PrefsManager.getHookInt(xposedModule, Constants.KEY_GLOBAL_LOGS, 0) == 1
-    }
-
     private fun handleDynamicHooks(context: Context, classLoader: ClassLoader) {
         val cachePrefs = context.getSharedPreferences(PREFS_CACHE, Context.MODE_PRIVATE)
-
-        @Suppress("DEPRECATION")
         val versionCode = try { context.packageManager.getPackageInfo(context.packageName, 0).versionCode } catch (_: Exception) { -1 }
-
-        val cachedVersion = cachePrefs.getInt(KEY_VERSION, -1)
-        val isSameVersion = (versionCode != -1 && versionCode == cachedVersion)
         val cachedTargets = cachePrefs.getStringSet(KEY_HOOK_TARGETS, null)
+        val isSameVersion = (versionCode != -1 && versionCode == cachePrefs.getInt(KEY_VERSION, -1))
 
-        if (isSameVersion && cachedTargets != null && cachedTargets.isNotEmpty()) {
-            for (target in cachedTargets) {
+        if (isSameVersion && cachedTargets != null) {
+            cachedTargets.forEach { target ->
                 val parts = target.split("|")
-                if (parts.size == 2) {
-                    hookMainControllerClass(classLoader, parts[0], parts[1])
-                }
+                if (parts.size == 2) hookMainControllerClass(classLoader, parts[0], parts[1])
             }
         } else {
+            val latch = CountDownLatch(1)
             backgroundExecutor.submit {
                 performSearchAndHookSynchronous(context, classLoader, versionCode, cachePrefs)
+                latch.countDown()
             }
+            try {
+                if (!latch.await(DEXKIT_TIMEOUT_MS, TimeUnit.MILLISECONDS)) {
+                    Handler(context.mainLooper).post {
+                        Toast.makeText(context, "Umbra: Patching Pydroid Premium, please restart app.", Toast.LENGTH_LONG).show()
+                    }
+                }
+            } catch (_: InterruptedException) {}
         }
     }
 
-    private fun performSearchAndHookSynchronous(
-        context: Context,
-        classLoader: ClassLoader,
-        versionCode: Int,
-        cachePrefs: SharedPreferences
-    ) {
-        val targetsToCache = mutableSetOf<String>()
-
+    private fun performSearchAndHookSynchronous(context: Context, classLoader: ClassLoader, versionCode: Int, cachePrefs: SharedPreferences) {
+        val targets = mutableSetOf<String>()
         try {
-            val apkPath = context.applicationInfo.sourceDir
-            DexKitBridge.create(apkPath).use { bridge ->
-                val matchers = bridge.findMethod {
-                    matcher {
-                        paramTypes(NAV_VIEW_CLASS)
-                        returnType("void")
-                    }
-                }
-
-                for (methodData in matchers) {
-                    val className = methodData.className
-                    if (!className.startsWith("com.google.") &&
-                        !className.startsWith("android.") &&
-                        !className.contains("Activity") &&
-                        !className.contains("Fragment")) {
-                        targetsToCache.add("$className|${methodData.methodName}")
+            DexKitBridge.create(context.applicationInfo.sourceDir).use { bridge ->
+                bridge.findMethod { matcher { paramTypes(NAV_VIEW_CLASS); returnType("void") } }.forEach { m ->
+                    if (!m.className.startsWith("com.google.") && !m.className.startsWith("android.") && !m.className.contains("Activity")) {
+                        targets.add("${m.className}|${m.methodName}")
                     }
                 }
             }
-
-            cachePrefs.edit()
-                .putInt(KEY_VERSION, versionCode)
-                .putStringSet(KEY_HOOK_TARGETS, targetsToCache)
-                .apply()
-
-            for (target in targetsToCache) {
+            cachePrefs.edit().putInt(KEY_VERSION, versionCode).putStringSet(KEY_HOOK_TARGETS, targets).apply()
+            targets.forEach { target ->
                 val parts = target.split("|")
-                if (parts.size == 2) {
-                    hookMainControllerClass(classLoader, parts[0], parts[1])
-                }
+                if (parts.size == 2) hookMainControllerClass(classLoader, parts[0], parts[1])
             }
-        } catch (t: Throwable) {
-            logError("DexKit Init Failed", t)
-        }
+        } catch (t: Throwable) { logError("DexKit Failed", t) }
     }
 
     private fun hookMainControllerClass(classLoader: ClassLoader, className: String, navMethodName: String) {
         try {
             val clazz = classLoader.loadClass(className)
-            val navViewClazz = classLoader.loadClass(NAV_VIEW_CLASS)
-
-            val navMethod = clazz.getDeclaredMethod(navMethodName, navViewClazz)
-            xposedModule.hook(navMethod).intercept { return@intercept null }
-
-            val methods = clazz.declaredMethods
-            for (method in methods) {
-                if (method.parameterTypes.isEmpty() &&
-                    method.returnType == Boolean::class.javaPrimitiveType &&
-                    !Modifier.isAbstract(method.modifiers)
-                ) {
-                    try {
-                        xposedModule.hook(method).intercept { return@intercept true }
-                    } catch (_: Throwable) {}
+            xposedModule.hook(clazz.getDeclaredMethod(navMethodName, classLoader.loadClass(NAV_VIEW_CLASS))).intercept { null }
+            clazz.declaredMethods.forEach { m ->
+                if (m.parameterTypes.isEmpty() && m.returnType == Boolean::class.javaPrimitiveType && !Modifier.isAbstract(m.modifiers)) {
+                    try { xposedModule.hook(m).intercept { true } } catch (_: Throwable) {}
                 }
             }
-        } catch (t: Throwable) {
-            logError("Error hooking class $className", t)
-        }
+        } catch (t: Throwable) { logError("Error hooking $className", t) }
     }
 
     private fun hookActivityLifecycle(classLoader: ClassLoader) {
         try {
             val activityClass = classLoader.loadClass("android.app.Activity")
-            val bundleClass = classLoader.loadClass("android.os.Bundle")
+            val hooker = { activity: Activity -> if (activity.javaClass.name.endsWith("MainActivity")) nukeStoryCircleInternal(activity) }
 
-            val onPostCreateMethod = activityClass.getDeclaredMethod("onPostCreate", bundleClass)
-            val onResumeMethod = activityClass.getDeclaredMethod("onResume")
-
-            xposedModule.hook(onPostCreateMethod).intercept { chain ->
-                val result = chain.proceed()
-                val activity = chain.thisObject as? Activity
-                if (activity != null && activity.javaClass.name.endsWith("MainActivity")) {
-                    nukeStoryCircleInternal(activity)
-                }
-                return@intercept result
+            xposedModule.hook(activityClass.getDeclaredMethod("onPostCreate", classLoader.loadClass("android.os.Bundle"))).intercept { chain ->
+                val r = chain.proceed(); (chain.thisObject as? Activity)?.let { hooker(it) }; r
             }
-
-            xposedModule.hook(onResumeMethod).intercept { chain ->
-                val result = chain.proceed()
-                val activity = chain.thisObject as? Activity
-                if (activity != null && activity.javaClass.name.endsWith("MainActivity")) {
-                    nukeStoryCircleInternal(activity)
-                }
-                return@intercept result
+            xposedModule.hook(activityClass.getDeclaredMethod("onResume")).intercept { chain ->
+                val r = chain.proceed(); (chain.thisObject as? Activity)?.let { hooker(it) }; r
             }
-        } catch (t: Throwable) {
-            if (logsEnabled) logError("Failed to hook Activity Lifecycle", t)
-        }
+        } catch (t: Throwable) { logError("Lifecycle hook failed", t) }
     }
 
     private fun nukeStoryCircleInternal(activity: Activity) {
-        try {
-            val resId = activity.resources.getIdentifier(TARGET_VIEW_NAME, "id", activity.packageName)
-            if (resId != 0) {
-                val view = activity.findViewById<View>(resId)
-                nukeView(view)
-            }
-        } catch (_: Throwable) {}
+        val resId = activity.resources.getIdentifier(TARGET_VIEW_NAME, "id", activity.packageName)
+        if (resId != 0) activity.findViewById<View>(resId)?.let { nukeView(it) }
     }
 
-    private fun nukeView(view: View?) {
-        if (view == null) return
+    private fun nukeView(view: View) {
         try {
-            if (view.visibility == View.GONE && view.layoutParams?.height == 0) return
-
             view.visibility = View.GONE
             view.alpha = 0f
-            view.setOnClickListener(null)
-            view.isClickable = false
-
-            val params = view.layoutParams
-            if (params != null) {
-                params.width = 0
-                params.height = 0
-                if (params is ViewGroup.MarginLayoutParams) {
-                    params.setMargins(0, 0, 0, 0)
-                }
-                view.layoutParams = params
+            view.layoutParams?.let { p ->
+                p.width = 0; p.height = 0
+                if (p is ViewGroup.MarginLayoutParams) p.setMargins(0, 0, 0, 0)
+                view.layoutParams = p
             }
         } catch (_: Throwable) {}
     }
+
+    private fun logError(m: String, t: Throwable? = null) { xposedModule.log(Log.ERROR, TAG, m, t) }
 }
