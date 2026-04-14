@@ -154,5 +154,9 @@ class PydroidHook : AppHook {
         } catch (_: Throwable) {}
     }
 
-    private fun logError(m: String, t: Throwable? = null) { xposedModule.log(Log.ERROR, TAG, m, t) }
+    private fun logError(m: String, t: Throwable? = null) {
+        if (logsEnabled) {
+            xposedModule.log(Log.ERROR, TAG, m, t)
+        }
+    }
 }

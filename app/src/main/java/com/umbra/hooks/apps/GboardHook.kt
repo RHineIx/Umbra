@@ -54,8 +54,10 @@ class GboardHook : AppHook {
     }
 
     private fun logError(message: String, t: Throwable? = null) {
-        if (t != null) xposedModule.log(Log.ERROR, TAG, message, t)
-        else xposedModule.log(Log.ERROR, TAG, message)
+        if (logsEnabled) {
+            if (t != null) xposedModule.log(Log.ERROR, TAG, message, t)
+            else xposedModule.log(Log.ERROR, TAG, message)
+        }
     }
 
     override fun handleLoadPackage(module: XposedModule, param: XposedModuleInterface.PackageLoadedParam) {
@@ -137,7 +139,6 @@ class GboardHook : AppHook {
             applyDynamicHooks(classLoader, cachePrefs.getString(KEY_METHOD_CONFIG, null), cachePrefs.getString(KEY_METHOD_CLEANUP, null), cachePrefs.getString(KEY_METHOD_RETENTION, null))
             applyPrivacyHooks(classLoader, cachePrefs.getString(KEY_CLASS_METRICS, null))
         } else {
-            // Solve Race Condition: Block main thread for a limited time during first update
             val latch = CountDownLatch(1)
             backgroundExecutor.submit {
                 performBackgroundSearchAndHook(context, classLoader, versionCode, cachePrefs)
