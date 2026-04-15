@@ -5,12 +5,10 @@ import io.github.libxposed.service.XposedService
 
 object PrefsManager {
 
-    private const val PREFS_NAME = "umbra_settings"
-
     fun putInt(service: XposedService?, key: String, value: Int): Boolean {
         if (service == null) return false
         return try {
-            val prefs = service.getRemotePreferences(PREFS_NAME)
+            val prefs = service.getRemotePreferences(Constants.PREFS_FILE)
             prefs.edit().putInt(key, value).apply()
             true
         } catch (_: Throwable) {
@@ -21,7 +19,7 @@ object PrefsManager {
     fun getInt(service: XposedService?, key: String, defValue: Int): Int {
         if (service == null) return defValue
         return try {
-            val prefs = service.getRemotePreferences(PREFS_NAME)
+            val prefs = service.getRemotePreferences(Constants.PREFS_FILE)
             prefs.getInt(key, defValue)
         } catch (_: Throwable) {
             defValue
@@ -30,7 +28,7 @@ object PrefsManager {
 
     fun getHookInt(module: XposedModule, key: String, defValue: Int): Int {
         return try {
-            val prefs = module.getRemotePreferences(PREFS_NAME)
+            val prefs = module.getRemotePreferences(Constants.PREFS_FILE)
             prefs.getInt(key, defValue)
         } catch (_: Throwable) {
             defValue

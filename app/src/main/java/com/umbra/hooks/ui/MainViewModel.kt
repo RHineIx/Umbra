@@ -54,6 +54,4 @@ class MainViewModel : ViewModel() {
             }
         }
     }
-    
-    fun getService(): XposedService? = xposedService
 }
