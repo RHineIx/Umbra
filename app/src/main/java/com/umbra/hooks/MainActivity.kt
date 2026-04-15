@@ -17,7 +17,6 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.repeatOnLifecycle
 import com.google.android.material.card.MaterialCardView
-import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import com.google.android.material.materialswitch.MaterialSwitch
 import com.umbra.hooks.ui.MainViewModel
 import io.github.libxposed.service.XposedService
@@ -83,8 +82,8 @@ class MainActivity : AppCompatActivity() {
             openLSPosedManager()
         }
 
-        findViewById<ImageView>(R.id.btnAbout).setOnClickListener {
-            showAboutDialog()
+        findViewById<TextView>(R.id.tvDeveloperCredits).setOnClickListener {
+            openTelegramProfile()
         }
 
         swGlobalLogs = findViewById(R.id.swGlobalLogs)
@@ -104,16 +103,6 @@ class MainActivity : AppCompatActivity() {
                 }
             }
         }
-    }
-
-    private fun showAboutDialog() {
-        MaterialAlertDialogBuilder(this)
-            .setIcon(R.mipmap.ic_launcher_round)
-            .setTitle(getString(R.string.app_name))
-            .setMessage("Developed by @RHineIx\n\nUmbra is an LSPosed module focusing on privacy, efficiency, and advanced app behavior modification.")
-            .setPositiveButton("Telegram") { _, _ -> openTelegramProfile() }
-            .setNegativeButton("Close", null)
-            .show()
     }
 
     private fun openTelegramProfile() {
