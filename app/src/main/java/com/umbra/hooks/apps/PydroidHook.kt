@@ -40,10 +40,6 @@ class PydroidHook : AppHook {
     private lateinit var xposedModule: XposedModule
     private val backgroundExecutor: ExecutorService = Executors.newSingleThreadExecutor()
 
-    init {
-        try { System.loadLibrary("dexkit") } catch (_: Throwable) {}
-    }
-
     override fun handleLoadPackage(module: XposedModule, param: XposedModuleInterface.PackageLoadedParam) {
         this.xposedModule = module
         val classLoader = param.defaultClassLoader
@@ -80,8 +76,11 @@ class PydroidHook : AppHook {
         } else {
             val latch = CountDownLatch(1)
             backgroundExecutor.submit {
-                performSearchAndHookSynchronous(context, classLoader, versionCode, cachePrefs)
-                latch.countDown()
+                try {
+                    performSearchAndHookSynchronous(context, classLoader, versionCode, cachePrefs)
+                } finally {
+                    latch.countDown()
+                }
             }
             try {
                 if (!latch.await(DEXKIT_TIMEOUT_MS, TimeUnit.MILLISECONDS)) {
@@ -93,7 +92,36 @@ class PydroidHook : AppHook {
         }
     }
 
+    private fun loadDexKitSafely() {
+        try {
+            System.loadLibrary("dexkit")
+        } catch (e: UnsatisfiedLinkError) {
+            try {
+                val appInfoMethod = xposedModule.javaClass.methods.firstOrNull { 
+                    it.name == "getApplicationInfo" || it.name == "getModuleApplicationInfo" 
+                }
+                val appInfo = appInfoMethod?.invoke(xposedModule) as? android.content.pm.ApplicationInfo
+                
+                if (appInfo != null) {
+                    val libPath = "${appInfo.nativeLibraryDir}/libdexkit.so"
+                    System.load(libPath)
+                } else {
+                    throw UnsatisfiedLinkError("Could not resolve module ApplicationInfo")
+                }
+            } catch (e2: Throwable) {
+                logError("Fatal: Failed to load libdexkit.so natively", e2)
+                throw e2
+            }
+        }
+    }
+
     private fun performSearchAndHookSynchronous(context: Context, classLoader: ClassLoader, versionCode: Int, cachePrefs: SharedPreferences) {
+        try {
+            loadDexKitSafely()
+        } catch (e: Throwable) {
+            return
+        }
+
         val targets = mutableSetOf<String>()
         try {
             DexKitBridge.create(context.applicationInfo.sourceDir).use { bridge ->

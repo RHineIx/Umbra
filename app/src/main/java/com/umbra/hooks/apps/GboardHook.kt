@@ -45,10 +45,6 @@ class GboardHook : AppHook {
     private val limitPattern = "(?i)limit\\s+\\d+".toRegex()
     private val backgroundExecutor: ExecutorService = Executors.newSingleThreadExecutor()
 
-    init {
-        try { System.loadLibrary("dexkit") } catch (_: Throwable) {}
-    }
-
     private fun logInfo(message: String) {
         if (logsEnabled) xposedModule.log(Log.INFO, TAG, message)
     }
@@ -141,8 +137,11 @@ class GboardHook : AppHook {
         } else {
             val latch = CountDownLatch(1)
             backgroundExecutor.submit {
-                performBackgroundSearchAndHook(context, classLoader, versionCode, cachePrefs)
-                latch.countDown()
+                try {
+                    performBackgroundSearchAndHook(context, classLoader, versionCode, cachePrefs)
+                } finally {
+                    latch.countDown()
+                }
             }
             try {
                 if (!latch.await(DEXKIT_TIMEOUT_MS, TimeUnit.MILLISECONDS)) {
@@ -154,7 +153,37 @@ class GboardHook : AppHook {
         }
     }
 
+    private fun loadDexKitSafely() {
+        try {
+            System.loadLibrary("dexkit")
+        } catch (e: UnsatisfiedLinkError) {
+            try {
+                // تجاوز مسار LSPosed عن طريق جلب المسار الأصلي المستخرج برمجياً
+                val appInfoMethod = xposedModule.javaClass.methods.firstOrNull { 
+                    it.name == "getApplicationInfo" || it.name == "getModuleApplicationInfo" 
+                }
+                val appInfo = appInfoMethod?.invoke(xposedModule) as? android.content.pm.ApplicationInfo
+                
+                if (appInfo != null) {
+                    val libPath = "${appInfo.nativeLibraryDir}/libdexkit.so"
+                    System.load(libPath)
+                } else {
+                    throw UnsatisfiedLinkError("Could not resolve module ApplicationInfo")
+                }
+            } catch (e2: Throwable) {
+                logError("Fatal: Failed to load libdexkit.so natively", e2)
+                throw e2
+            }
+        }
+    }
+
     private fun performBackgroundSearchAndHook(context: Context, classLoader: ClassLoader, versionCode: Int, cachePrefs: SharedPreferences) {
+        try {
+            loadDexKitSafely()
+        } catch (e: Throwable) {
+            return
+        }
+
         try {
             DexKitBridge.create(context.applicationInfo.sourceDir).use { bridge ->
                 val adapterClass = bridge.findClass { matcher { usingStrings("com/google/android/apps/inputmethod/libs/clipboard/ClipboardAdapter") } }.firstOrNull()
