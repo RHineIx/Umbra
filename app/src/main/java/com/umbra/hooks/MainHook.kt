@@ -13,6 +13,10 @@ import io.github.libxposed.api.XposedModuleInterface
 @SuppressLint("NewApi")
 class MainHook : XposedModule() {
 
+    companion object {
+        private const val TAG = "UMBRA-MAIN"
+    }
+
     private val hooks: List<AppHook> = listOf(
         GboardHook(),
         PydroidHook()
@@ -24,16 +28,23 @@ class MainHook : XposedModule() {
 
         val logsEnabled = PrefsManager.getHookInt(this, Constants.KEY_GLOBAL_LOGS, 0) == 1
 
+        if (logsEnabled) {
+            log(Log.INFO, TAG, "[DEBUG] Analyzing package load: $packageName")
+        }
+
         for (hook in hooks) {
             if (packageName in hook.targetPackages) {
                 try {
                     if (logsEnabled) {
-                        log(Log.INFO, "UMBRA", "Loading hook for: $packageName")
+                        log(Log.INFO, TAG, "[MATCH] Target package found: $packageName. Executing ${hook.javaClass.simpleName}")
                     }
                     hook.handleLoadPackage(this, param)
+                    if (logsEnabled) {
+                        log(Log.INFO, TAG, "[SUCCESS] ${hook.javaClass.simpleName} executed successfully for $packageName")
+                    }
                 } catch (t: Throwable) {
                     if (logsEnabled) {
-                        log(Log.ERROR, "UMBRA", "FATAL ERROR in ${hook.javaClass.simpleName}", t)
+                        log(Log.ERROR, TAG, "[FATAL] Exception occurred in ${hook.javaClass.simpleName}", t)
                     }
                 }
             }
