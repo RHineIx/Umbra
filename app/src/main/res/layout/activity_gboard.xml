@@ -2,7 +2,7 @@
 <ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
     xmlns:tools="http://schemas.android.com/tools"
-    tools:ignore="Overdraw, HardcodedText, ContentDescription, DisableBaselineAlignment, UselessParent"
+    tools:ignore="Overdraw, ContentDescription, DisableBaselineAlignment, UselessParent"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:background="?android:attr/colorBackground"
@@ -31,7 +31,7 @@
                 <TextView
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:text="Gboard Settings"
+                    android:text="@string/title_gboard_settings"
                     android:textAppearance="?attr/textAppearanceDisplaySmall"
                     android:textColor="?attr/colorOnBackground"
                     android:textStyle="bold" />
@@ -39,7 +39,7 @@
                 <TextView
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:text="Clipboard &amp; History"
+                    android:text="@string/subtitle_clipboard_history"
                     android:textAppearance="?attr/textAppearanceBodyMedium"
                     android:textColor="?attr/colorOnSurfaceVariant" />
             </LinearLayout>
@@ -56,7 +56,7 @@
             app:boxCornerRadiusBottomStart="16dp"
             app:boxCornerRadiusTopEnd="16dp"
             app:boxCornerRadiusTopStart="16dp"
-            android:hint="Clipboard History Limit">
+            android:hint="@string/hint_clip_limit">
 
             <com.google.android.material.textfield.TextInputEditText
                 android:id="@+id/etLimit"
@@ -75,7 +75,7 @@
             app:boxCornerRadiusBottomStart="16dp"
             app:boxCornerRadiusTopEnd="16dp"
             app:boxCornerRadiusTopStart="16dp"
-            android:hint="Retention (Days)">
+            android:hint="@string/hint_retention_days">
 
             <com.google.android.material.textfield.TextInputEditText
                 android:id="@+id/etRetention"
@@ -88,7 +88,7 @@
             android:id="@+id/btnSave"
             android:layout_width="match_parent"
             android:layout_height="56dp"
-            android:text="Save Configuration"
+            android:text="@string/action_save_config"
             android:textAllCaps="false"
             app:cornerRadius="16dp" />
 

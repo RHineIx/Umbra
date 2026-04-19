@@ -1,9 +1,12 @@
 package com.umbra.hooks.utils
 
+import android.util.Log
 import io.github.libxposed.api.XposedModule
 import io.github.libxposed.service.XposedService
 
 object PrefsManager {
+
+    private const val TAG = "UMBRA-PREFS"
 
     fun putInt(service: XposedService?, key: String, value: Int): Boolean {
         if (service == null) return false
@@ -11,7 +14,8 @@ object PrefsManager {
             val prefs = service.getRemotePreferences(Constants.PREFS_FILE)
             prefs.edit().putInt(key, value).apply()
             true
-        } catch (_: Throwable) {
+        } catch (e: Throwable) {
+            Log.e(TAG, "Failed to write int to remote prefs. Key: $key", e)
             false
         }
     }
@@ -21,7 +25,8 @@ object PrefsManager {
         return try {
             val prefs = service.getRemotePreferences(Constants.PREFS_FILE)
             prefs.getInt(key, defValue)
-        } catch (_: Throwable) {
+        } catch (e: Throwable) {
+            Log.e(TAG, "Failed to read int from remote prefs. Key: $key", e)
             defValue
         }
     }
@@ -30,7 +35,8 @@ object PrefsManager {
         return try {
             val prefs = module.getRemotePreferences(Constants.PREFS_FILE)
             prefs.getInt(key, defValue)
-        } catch (_: Throwable) {
+        } catch (e: Throwable) {
+            module.log(Log.ERROR, TAG, "Failed to read int from hook prefs. Key: $key", e)
             defValue
         }
     }

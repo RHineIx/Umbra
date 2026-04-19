@@ -5,9 +5,11 @@ import android.app.Activity
 import android.content.Context
 import android.content.SharedPreferences
 import android.os.Handler
+import android.os.Looper
 import android.util.Log
 import android.view.View
 import android.view.ViewGroup
+import android.view.ViewTreeObserver
 import android.widget.Toast
 import com.umbra.hooks.core.AppHook
 import com.umbra.hooks.utils.Constants
@@ -16,10 +18,8 @@ import io.github.libxposed.api.XposedModule
 import io.github.libxposed.api.XposedModuleInterface
 import org.luckypray.dexkit.DexKitBridge
 import java.lang.reflect.Modifier
-import java.util.concurrent.CountDownLatch
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
-import java.util.concurrent.TimeUnit
 
 @SuppressLint("NewApi", "DiscouragedApi")
 class PydroidHook : AppHook {
@@ -31,13 +31,13 @@ class PydroidHook : AppHook {
         private const val PREFS_CACHE = "umbra_pydroid_cache"
         private const val KEY_VERSION = "pydroid_version"
         private const val KEY_HOOK_TARGETS = "pydroid_hook_targets"
-        private const val DEXKIT_TIMEOUT_MS = 2500L
     }
 
     override val targetPackages = setOf("ru.iiec.pydroid3")
 
     @Volatile private var logsEnabled = false
     private lateinit var xposedModule: XposedModule
+    
     private val backgroundExecutor: ExecutorService = Executors.newSingleThreadExecutor()
 
     private fun logInfo(message: String) {
@@ -91,25 +91,23 @@ class PydroidHook : AppHook {
                 if (parts.size == 2) hookMainControllerClass(classLoader, parts[0], parts[1])
             }
         } else {
-            logInfo("[UPDATE] App version updated or cache missing. Initiating DexKit analysis...")
-            val latch = CountDownLatch(1)
+            logInfo("[UPDATE] App version updated or cache missing. Initiating async DexKit analysis...")
             backgroundExecutor.submit {
                 try {
                     performSearchAndHookSynchronous(context, classLoader, versionCode, cachePrefs)
-                } finally {
-                    latch.countDown()
+                    logInfo("[SUCCESS] Background DexKit analysis finished successfully.")
+                    
+                    Handler(Looper.getMainLooper()).post {
+                        try {
+                            Toast.makeText(context, "Umbra: Pydroid Premium patched. Please restart.", Toast.LENGTH_LONG).show()
+                        } catch (e: Throwable) {
+                            logError("[WARN] Context invalid for Toast display", e)
+                        }
+                    }
+                } catch (t: Throwable) {
+                    logError("[ERROR] Background analysis failed", t)
                 }
             }
-            try {
-                if (!latch.await(DEXKIT_TIMEOUT_MS, TimeUnit.MILLISECONDS)) {
-                    logInfo("[WARN] DexKit search exceeded threshold. User notified.")
-                    Handler(context.mainLooper).post {
-                        Toast.makeText(context, "Umbra: Patching Pydroid Premium, please restart app.", Toast.LENGTH_LONG).show()
-                    }
-                } else {
-                    logInfo("[SUCCESS] Background DexKit analysis finished successfully.")
-                }
-            } catch (_: InterruptedException) {}
         }
     }
 
@@ -191,35 +189,35 @@ class PydroidHook : AppHook {
     private fun hookActivityLifecycle(classLoader: ClassLoader) {
         try {
             val activityClass = classLoader.loadClass("android.app.Activity")
-            val hooker = { activity: Activity -> 
-                if (activity.javaClass.name.endsWith("MainActivity")) {
-                    nukeStoryCircleInternal(activity) 
-                }
-            }
 
-            xposedModule.hook(activityClass.getDeclaredMethod("onPostCreate", classLoader.loadClass("android.os.Bundle"))).intercept { chain ->
-                val r = chain.proceed()
-                (chain.thisObject as? Activity)?.let { hooker(it) }
-                r
-            }
             xposedModule.hook(activityClass.getDeclaredMethod("onResume")).intercept { chain ->
                 val r = chain.proceed()
-                (chain.thisObject as? Activity)?.let { hooker(it) }
+                val activity = chain.thisObject as? Activity
+                
+                if (activity != null && activity.javaClass.name.endsWith("MainActivity")) {
+                    val rootView = activity.window.decorView.rootView
+                    val resId = activity.resources.getIdentifier(TARGET_VIEW_NAME, "id", activity.packageName)
+                    
+                    if (resId != 0) {
+                        val layoutListener = object : ViewTreeObserver.OnGlobalLayoutListener {
+                            override fun onGlobalLayout() {
+                                val targetView = activity.findViewById<View>(resId)
+                                if (targetView != null && targetView.visibility != View.GONE) {
+                                    nukeView(targetView)
+                                    logInfo("[UI] Target view '$TARGET_VIEW_NAME' located and neutralized dynamically.")
+                                }
+                            }
+                        }
+                        
+                        rootView.viewTreeObserver.addOnGlobalLayoutListener(layoutListener)
+                        logInfo("[UI] Attached ViewTreeObserver to MainActivity.")
+                    }
+                }
                 r
             }
-            logInfo("[SUCCESS] Activity lifecycle observation active.")
+            logInfo("[SUCCESS] Activity lifecycle observation active (with ViewTreeObserver).")
         } catch (t: Throwable) { 
             logError("[ERROR] Failed to attach to Activity lifecycle", t) 
-        }
-    }
-
-    private fun nukeStoryCircleInternal(activity: Activity) {
-        val resId = activity.resources.getIdentifier(TARGET_VIEW_NAME, "id", activity.packageName)
-        if (resId != 0) {
-            activity.findViewById<View>(resId)?.let { 
-                nukeView(it) 
-                logInfo("[UI] Target view '$TARGET_VIEW_NAME' located and neutralized.")
-            }
         }
     }
 

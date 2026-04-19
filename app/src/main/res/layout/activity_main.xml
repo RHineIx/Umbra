@@ -2,7 +2,7 @@
 <ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
     xmlns:tools="http://schemas.android.com/tools"
-    tools:ignore="Overdraw, HardcodedText, ContentDescription, DisableBaselineAlignment, UselessParent"
+    tools:ignore="Overdraw, ContentDescription, DisableBaselineAlignment, UselessParent"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:background="?android:attr/colorBackground"
@@ -42,26 +42,12 @@
                         android:textColor="?attr/colorOnBackground"
                         android:textStyle="bold" />
 
-                    <TextView
-                        android:id="@+id/tvDeveloperCredits"
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:layout_marginStart="2dp"
-                        android:background="?attr/selectableItemBackground"
-                        android:clickable="true"
-                        android:focusable="true"
-                        android:paddingHorizontal="4dp"
-                        android:paddingVertical="2dp"
-                        android:text="by @RHineIx"
-                        android:textAppearance="?attr/textAppearanceLabelMedium"
-                        android:textColor="?attr/colorPrimary"
-                        android:textStyle="bold" />
                 </LinearLayout>
 
                 <TextView
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:text="LSPosed Module"
+                    android:text="@string/title_lsposed_module"
                     android:textAppearance="?attr/textAppearanceBodyMedium"
                     android:textColor="?attr/colorOnSurfaceVariant" />
             </LinearLayout>
@@ -155,7 +141,7 @@
                         android:layout_width="0dp"
                         android:layout_height="wrap_content"
                         android:layout_weight="1"
-                        android:text="Pydroid 3"
+                        android:text="@string/title_pydroid"
                         android:textAppearance="?attr/textAppearanceTitleLarge" />
 
                     <TextView
@@ -165,7 +151,7 @@
                         android:backgroundTint="?attr/colorSecondaryContainer"
                         android:paddingHorizontal="14dp"
                         android:paddingVertical="6dp"
-                        android:text="ENABLED"
+                        android:text="@string/status_enabled"
                         android:textAppearance="?attr/textAppearanceLabelMedium"
                         android:textColor="?attr/colorOnSecondaryContainer" />
                 </LinearLayout>
@@ -174,7 +160,7 @@
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:layout_marginTop="8dp"
-                    android:text="Premium unlock, No-Ads &amp; Redirects."
+                    android:text="@string/desc_pydroid_features"
                     android:textAppearance="?attr/textAppearanceBodyMedium"
                     android:textColor="?attr/colorOnSurfaceVariant" />
             </LinearLayout>
@@ -208,7 +194,7 @@
                         android:layout_width="0dp"
                         android:layout_height="wrap_content"
                         android:layout_weight="1"
-                        android:text="Gboard Clipboard"
+                        android:text="@string/title_gboard"
                         android:textAppearance="?attr/textAppearanceTitleLarge" />
 
                     <TextView
@@ -218,7 +204,7 @@
                         android:backgroundTint="?attr/colorPrimaryContainer"
                         android:paddingHorizontal="14dp"
                         android:paddingVertical="6dp"
-                        android:text="CONFIG"
+                        android:text="@string/status_config"
                         android:textAppearance="?attr/textAppearanceLabelMedium"
                         android:textColor="?attr/colorOnPrimaryContainer" />
                 </LinearLayout>
@@ -227,7 +213,7 @@
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:layout_marginTop="8dp"
-                    android:text="Configure clipboard history limits."
+                    android:text="@string/desc_gboard_features"
                     android:textAppearance="?attr/textAppearanceBodyMedium"
                     android:textColor="?attr/colorOnSurfaceVariant" />
             </LinearLayout>
@@ -252,7 +238,7 @@
                 <TextView
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:text="LSP Logs"
+                    android:text="@string/title_lsp_logs"
                     android:textAppearance="?attr/textAppearanceTitleMedium"
                     android:textColor="?attr/colorOnSurface" />
 
@@ -260,7 +246,7 @@
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:layout_marginTop="2dp"
-                    android:text="Enable Module Logs"
+                    android:text="@string/desc_enable_logs"
                     android:textAppearance="?attr/textAppearanceBodySmall"
                     android:textColor="?attr/colorOnSurfaceVariant" />
             </LinearLayout>

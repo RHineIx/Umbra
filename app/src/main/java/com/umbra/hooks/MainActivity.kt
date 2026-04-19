@@ -5,7 +5,6 @@ import android.animation.ValueAnimator
 import android.annotation.SuppressLint
 import android.content.Intent
 import android.content.res.ColorStateList
-import android.net.Uri
 import android.os.Bundle
 import android.util.TypedValue
 import android.widget.ImageView
@@ -24,9 +23,8 @@ import io.github.libxposed.service.XposedServiceHelper
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import kotlin.system.exitProcess
+import java.lang.ref.WeakReference
 
-@SuppressLint("SetTextI18n")
 class MainActivity : AppCompatActivity() {
 
     private val viewModel: MainViewModel by viewModels()
@@ -39,20 +37,18 @@ class MainActivity : AppCompatActivity() {
             private set
 
         private var isListenerRegistered = false
+        private var activityRef = WeakReference<MainActivity>(null)
 
-        @SuppressLint("StaticFieldLeak")
-        private var currentActivity: MainActivity? = null
-    }
+        private val serviceListener = object : XposedServiceHelper.OnServiceListener {
+            override fun onServiceBind(service: XposedService) {
+                xposedService = service
+                activityRef.get()?.viewModel?.updateServiceStatus(service)
+            }
 
-    private val globalServiceListener = object : XposedServiceHelper.OnServiceListener {
-        override fun onServiceBind(service: XposedService) {
-            xposedService = service
-            viewModel.updateServiceStatus(service)
-        }
-
-        override fun onServiceDied(service: XposedService) {
-            xposedService = null
-            viewModel.updateServiceStatus(null)
+            override fun onServiceDied(service: XposedService) {
+                xposedService = null
+                activityRef.get()?.viewModel?.updateServiceStatus(null)
+            }
         }
     }
 
@@ -60,17 +56,27 @@ class MainActivity : AppCompatActivity() {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
 
-        currentActivity = this
+        activityRef = WeakReference(this)
 
         if (!isListenerRegistered) {
             try {
-                XposedServiceHelper.registerListener(globalServiceListener)
+                XposedServiceHelper.registerListener(serviceListener)
                 isListenerRegistered = true
-            } catch (_: Throwable) {}
+            } catch (_: Throwable) {
+                // Fallback for environments where service isn't available
+            }
         }
+
+        // Sync state immediately in case service bound before activity creation
+        viewModel.updateServiceStatus(xposedService)
 
         initViews()
         observeState()
+    }
+
+    override fun onResume() {
+        super.onResume()
+        activityRef = WeakReference(this)
     }
 
     private fun initViews() {
@@ -80,10 +86,6 @@ class MainActivity : AppCompatActivity() {
 
         findViewById<ImageView>(R.id.imgLsposed).setOnClickListener {
             openLSPosedManager()
-        }
-
-        findViewById<TextView>(R.id.tvDeveloperCredits).setOnClickListener {
-            openTelegramProfile()
         }
 
         swGlobalLogs = findViewById(R.id.swGlobalLogs)
@@ -105,14 +107,6 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    private fun openTelegramProfile() {
-        try {
-            startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://t.me/RHineIx")))
-        } catch (e: Exception) {
-            Toast.makeText(this, "Telegram or Browser not found", Toast.LENGTH_SHORT).show()
-        }
-    }
-
     private fun updateUI(isActive: Boolean, fwName: String?, fwVersion: String?) {
         if (currentActiveState == isActive) return
         val isFirstLoad = currentActiveState == null
@@ -128,8 +122,9 @@ class MainActivity : AppCompatActivity() {
         val targetContent = if (isActive) getThemeColor(com.google.android.material.R.attr.colorOnPrimaryContainer)
                             else getThemeColor(com.google.android.material.R.attr.colorOnErrorContainer)
 
-        tvTitle.text = if (isActive) "Module Activated" else "Module Not Active"
-        tvDesc.text = if (isActive) "Running in $fwName ($fwVersion)" else "Enable in LSPosed and reboot."
+        tvTitle.text = if (isActive) getString(R.string.title_module_activated) else getString(R.string.title_module_inactive)
+        tvDesc.text = if (isActive) getString(R.string.desc_module_running_format, fwName ?: "Unknown", fwVersion ?: "Unknown") 
+                      else getString(R.string.desc_module_enable_reboot)
         imgWatermark.isActivated = isActive
 
         if (isFirstLoad) {
@@ -164,8 +159,8 @@ class MainActivity : AppCompatActivity() {
         lifecycleScope.launch(Dispatchers.IO) {
             try {
                 val process = Runtime.getRuntime().exec(arrayOf("su", "-c", "am broadcast -a android.telephony.action.SECRET_CODE -d android_secret_code://5776733 android"))
-                if (process.waitFor() != 0) withContext(Dispatchers.Main) { Toast.makeText(this@MainActivity, "Root denied", Toast.LENGTH_SHORT).show() }
-            } catch (_: Exception) { withContext(Dispatchers.Main) { Toast.makeText(this@MainActivity, "Device not rooted", Toast.LENGTH_SHORT).show() } }
+                if (process.waitFor() != 0) withContext(Dispatchers.Main) { Toast.makeText(this@MainActivity, R.string.toast_root_denied, Toast.LENGTH_SHORT).show() }
+            } catch (_: Exception) { withContext(Dispatchers.Main) { Toast.makeText(this@MainActivity, R.string.toast_device_not_rooted, Toast.LENGTH_SHORT).show() } }
         }
     }
 
@@ -173,18 +168,5 @@ class MainActivity : AppCompatActivity() {
         val value = TypedValue()
         theme.resolveAttribute(attr, value, true)
         return value.data
-    }
-
-    override fun onResume() {
-        super.onResume()
-        currentActivity = this
-    }
-
-    override fun onDestroy() {
-        super.onDestroy()
-        if (currentActivity == this) {
-            currentActivity = null
-        }
-        if (isFinishing) exitProcess(0)
     }
 }

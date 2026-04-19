@@ -15,10 +15,8 @@ import io.github.libxposed.api.XposedModuleInterface
 import org.luckypray.dexkit.DexKitBridge
 import org.luckypray.dexkit.wrap.DexMethod
 import java.lang.reflect.Modifier
-import java.util.concurrent.CountDownLatch
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
-import java.util.concurrent.TimeUnit
 
 @SuppressLint("NewApi")
 class GboardHook : AppHook {
@@ -31,7 +29,6 @@ class GboardHook : AppHook {
         private const val KEY_METHOD_CLEANUP = "method_cleanup_list"
         private const val KEY_CLASS_METRICS = "class_metrics_processor"
         private const val KEY_METHOD_RETENTION = "method_retention_logic"
-        private const val DEXKIT_TIMEOUT_MS = 2500L
     }
 
     override val targetPackages = setOf("com.google.android.inputmethod.latin")
@@ -43,6 +40,7 @@ class GboardHook : AppHook {
 
     private lateinit var xposedModule: XposedModule
     private val limitPattern = "(?i)limit\\s+\\d+".toRegex()
+    
     private val backgroundExecutor: ExecutorService = Executors.newSingleThreadExecutor()
 
     private fun logInfo(message: String) {
@@ -152,25 +150,23 @@ class GboardHook : AppHook {
             applyDynamicHooks(classLoader, cachePrefs.getString(KEY_METHOD_CONFIG, null), cachePrefs.getString(KEY_METHOD_CLEANUP, null), cachePrefs.getString(KEY_METHOD_RETENTION, null))
             applyPrivacyHooks(classLoader, cachePrefs.getString(KEY_CLASS_METRICS, null))
         } else {
-            logInfo("[UPDATE] New version code detected ($versionCode). Initiating DexKit background search...")
-            val latch = CountDownLatch(1)
+            logInfo("[UPDATE] New version code detected ($versionCode). Initiating DexKit async background search...")
             backgroundExecutor.submit {
                 try {
                     performBackgroundSearchAndHook(context, classLoader, versionCode, cachePrefs)
-                } finally {
-                    latch.countDown()
+                    logInfo("[SUCCESS] DexKit background search completed.")
+                    
+                    Handler(Looper.getMainLooper()).post {
+                        try {
+                            Toast.makeText(context, "Umbra: Gboard offsets updated. Please restart the app.", Toast.LENGTH_LONG).show()
+                        } catch (e: Throwable) {
+                            logError("[WARN] Context invalid for Toast display", e)
+                        }
+                    }
+                } catch (t: Throwable) {
+                    logError("[ERROR] Background search and hook failed", t)
                 }
             }
-            try {
-                if (!latch.await(DEXKIT_TIMEOUT_MS, TimeUnit.MILLISECONDS)) {
-                    logInfo("[WARN] DexKit search exceeded timeout. Instructing user to restart.")
-                    Handler(Looper.getMainLooper()).post {
-                        Toast.makeText(context, "Umbra: Updating offsets, please restart app for full protection.", Toast.LENGTH_LONG).show()
-                    }
-                } else {
-                    logInfo("[SUCCESS] DexKit search completed within timeout window.")
-                }
-            } catch (_: InterruptedException) {}
         }
     }
 
@@ -219,6 +215,7 @@ class GboardHook : AppHook {
                 logInfo("[SEARCH] Results -> Config: ${config != null}, Cleanup: ${cleanup != null}, Retention: ${retention != null}, Metrics: ${metrics != null}")
 
                 cachePrefs.edit().putInt(KEY_VERSION, versionCode).putString(KEY_METHOD_CONFIG, config).putString(KEY_METHOD_CLEANUP, cleanup).putString(KEY_CLASS_METRICS, metrics).putString(KEY_METHOD_RETENTION, retention).apply()
+                
                 applyDynamicHooks(classLoader, config, cleanup, retention)
                 applyPrivacyHooks(classLoader, metrics)
             }

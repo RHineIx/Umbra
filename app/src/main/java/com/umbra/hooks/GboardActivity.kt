@@ -1,6 +1,5 @@
 package com.umbra.hooks
 
-import android.annotation.SuppressLint
 import android.content.Intent
 import android.net.Uri
 import android.os.Bundle
@@ -13,7 +12,6 @@ import com.google.android.material.textfield.TextInputLayout
 import com.umbra.hooks.utils.Constants
 import com.umbra.hooks.utils.PrefsManager
 
-@SuppressLint("SetTextI18n")
 class GboardActivity : AppCompatActivity() {
 
     private lateinit var tilLimit: TextInputLayout
@@ -57,7 +55,7 @@ class GboardActivity : AppCompatActivity() {
     private fun saveSettings() {
         val service = MainActivity.xposedService
         if (service == null) {
-            Toast.makeText(this, "Xposed service disconnected", Toast.LENGTH_SHORT).show()
+            Toast.makeText(this, R.string.toast_service_disconnected, Toast.LENGTH_SHORT).show()
             return
         }
 
@@ -68,10 +66,10 @@ class GboardActivity : AppCompatActivity() {
         val retentionSaved = PrefsManager.putInt(service, Constants.KEY_GBOARD_RETENTION_DAYS, retention)
 
         if (limitSaved && retentionSaved) {
-            Toast.makeText(this, "Settings Saved", Toast.LENGTH_SHORT).show()
+            Toast.makeText(this, R.string.toast_settings_saved, Toast.LENGTH_SHORT).show()
             openAppInfo("com.google.android.inputmethod.latin")
         } else {
-            Toast.makeText(this, "Failed to save settings", Toast.LENGTH_SHORT).show()
+            Toast.makeText(this, R.string.toast_settings_failed, Toast.LENGTH_SHORT).show()
         }
     }
 
