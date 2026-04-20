@@ -1,12 +1,18 @@
 package com.umbra.hooks
 
+import android.animation.Animator
+import android.animation.AnimatorListenerAdapter
 import android.animation.ArgbEvaluator
 import android.animation.ValueAnimator
 import android.annotation.SuppressLint
 import android.content.Intent
 import android.content.res.ColorStateList
+import android.net.Uri
 import android.os.Bundle
 import android.util.TypedValue
+import android.view.View
+import android.view.ViewGroup
+import android.view.animation.DecelerateInterpolator
 import android.widget.ImageView
 import android.widget.TextView
 import android.widget.Toast
@@ -95,6 +101,78 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun initViews() {
+        val cardStatus = findViewById<MaterialCardView>(R.id.cardStatus)
+        val layoutExpandedInfo = findViewById<View>(R.id.layoutExpandedInfo)
+        val tvAppVersion = findViewById<TextView>(R.id.tvAppVersion)
+        val tvDeveloperInfo = findViewById<TextView>(R.id.tvDeveloperInfo)
+
+        try {
+            val pInfo = packageManager.getPackageInfo(packageName, 0)
+            tvAppVersion.text = getString(R.string.app_version_format, pInfo.versionName)
+        } catch (_: Exception) {
+            tvAppVersion.text = getString(R.string.app_version_format, "Unknown")
+        }
+        tvDeveloperInfo.text = getString(R.string.developer_info)
+
+        tvDeveloperInfo.setOnClickListener {
+            try {
+                val intent = Intent(Intent.ACTION_VIEW, Uri.parse("https://t.me/RHineIx"))
+                startActivity(intent)
+            } catch (e: Exception) {
+                Toast.makeText(this, "Could not open link", Toast.LENGTH_SHORT).show()
+            }
+        }
+
+        var isExpanded = false
+        var heightAnimator: ValueAnimator? = null
+
+        cardStatus.setOnClickListener {
+            heightAnimator?.cancel()
+
+            if (isExpanded) {
+                val startHeight = layoutExpandedInfo.height
+                heightAnimator = ValueAnimator.ofInt(startHeight, 0).apply {
+                    duration = 200
+                    interpolator = DecelerateInterpolator()
+                    addUpdateListener { animation ->
+                        layoutExpandedInfo.layoutParams.height = animation.animatedValue as Int
+                        layoutExpandedInfo.requestLayout()
+                    }
+                    addListener(object : AnimatorListenerAdapter() {
+                        override fun onAnimationEnd(animation: Animator) {
+                            layoutExpandedInfo.visibility = View.GONE
+                        }
+                    })
+                    start()
+                }
+                isExpanded = false
+            } else {
+                layoutExpandedInfo.visibility = View.VISIBLE
+                
+                val widthSpec = View.MeasureSpec.makeMeasureSpec(cardStatus.width, View.MeasureSpec.EXACTLY)
+                val heightSpec = View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED)
+                layoutExpandedInfo.measure(widthSpec, heightSpec)
+                val targetHeight = layoutExpandedInfo.measuredHeight
+                val startHeight = layoutExpandedInfo.height
+
+                heightAnimator = ValueAnimator.ofInt(startHeight, targetHeight).apply {
+                    duration = 200
+                    interpolator = DecelerateInterpolator()
+                    addUpdateListener { animation ->
+                        layoutExpandedInfo.layoutParams.height = animation.animatedValue as Int
+                        layoutExpandedInfo.requestLayout()
+                    }
+                    addListener(object : AnimatorListenerAdapter() {
+                        override fun onAnimationEnd(animation: Animator) {
+                            layoutExpandedInfo.layoutParams.height = ViewGroup.LayoutParams.WRAP_CONTENT
+                        }
+                    })
+                    start()
+                }
+                isExpanded = true
+            }
+        }
+
         findViewById<MaterialCardView>(R.id.cardGboard).setOnClickListener {
             startActivity(Intent(this, GboardActivity::class.java))
         }
@@ -130,6 +208,8 @@ class MainActivity : AppCompatActivity() {
         val cardStatus = findViewById<MaterialCardView>(R.id.cardStatus)
         val tvTitle = findViewById<TextView>(R.id.tvStatusTitle)
         val tvDesc = findViewById<TextView>(R.id.tvStatusDesc)
+        val tvAppVersion = findViewById<TextView>(R.id.tvAppVersion)
+        val tvDeveloperInfo = findViewById<TextView>(R.id.tvDeveloperInfo)
         val imgWatermark = findViewById<ImageView>(R.id.imgStatusWatermark)
 
         val targetBg = if (isActive) getThemeColor(com.google.android.material.R.attr.colorPrimaryContainer) 
@@ -146,24 +226,31 @@ class MainActivity : AppCompatActivity() {
             cardStatus.setCardBackgroundColor(targetBg)
             tvTitle.setTextColor(targetContent)
             tvDesc.setTextColor(targetContent)
+            tvAppVersion.setTextColor(targetContent)
+            tvDeveloperInfo.setTextColor(targetContent)
             imgWatermark.imageTintList = ColorStateList.valueOf(targetContent)
         } else {
-            animateColorChange(cardStatus, tvTitle, tvDesc, imgWatermark, targetBg, targetContent)
+            animateColorChange(cardStatus, tvTitle, tvDesc, tvAppVersion, tvDeveloperInfo, imgWatermark, targetBg, targetContent)
         }
     }
 
-    private fun animateColorChange(card: MaterialCardView, title: TextView, desc: TextView, img: ImageView, bg: Int, content: Int) {
+    private fun animateColorChange(
+        card: MaterialCardView, title: TextView, desc: TextView, 
+        version: TextView, dev: TextView, img: ImageView, bg: Int, content: Int
+    ) {
         ValueAnimator.ofObject(ArgbEvaluator(), card.cardBackgroundColor.defaultColor, bg).apply {
-            duration = 400
+            duration = 250
             addUpdateListener { card.setCardBackgroundColor(it.animatedValue as Int) }
             start()
         }
         ValueAnimator.ofObject(ArgbEvaluator(), title.currentTextColor, content).apply {
-            duration = 400
+            duration = 250
             addUpdateListener {
                 val c = it.animatedValue as Int
                 title.setTextColor(c)
                 desc.setTextColor(c)
+                version.setTextColor(c)
+                dev.setTextColor(c)
                 img.imageTintList = ColorStateList.valueOf(c)
             }
             start()
