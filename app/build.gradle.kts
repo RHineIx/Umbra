@@ -10,8 +10,8 @@ android {
         applicationId = "com.umbra.hooks"
         minSdk = 26
         targetSdk = 36
-        versionCode = 20500
-        versionName = "2.5.0"
+        versionCode = 20505
+        versionName = "2.5.5"
 
         ndk {
             abiFilters.add("arm64-v8a")
