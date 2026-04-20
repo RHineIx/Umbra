@@ -18,8 +18,7 @@ import io.github.libxposed.api.XposedModule
 import io.github.libxposed.api.XposedModuleInterface
 import org.luckypray.dexkit.DexKitBridge
 import java.lang.reflect.Modifier
-import java.util.concurrent.ExecutorService
-import java.util.concurrent.Executors
+import java.util.concurrent.*
 
 @SuppressLint("NewApi", "DiscouragedApi")
 class PydroidHook : AppHook {
@@ -38,7 +37,11 @@ class PydroidHook : AppHook {
     @Volatile private var logsEnabled = false
     private lateinit var xposedModule: XposedModule
     
-    private val backgroundExecutor: ExecutorService = Executors.newSingleThreadExecutor()
+    private val backgroundExecutor: ExecutorService = ThreadPoolExecutor(
+        0, 1,
+        60L, TimeUnit.SECONDS,
+        LinkedBlockingQueue<Runnable>()
+    )
 
     private fun logInfo(message: String) {
         if (logsEnabled) xposedModule.log(Log.INFO, TAG, message)
@@ -85,17 +88,17 @@ class PydroidHook : AppHook {
         val isSameVersion = (versionCode != -1 && versionCode == cachePrefs.getInt(KEY_VERSION, -1))
 
         if (isSameVersion && cachedTargets != null) {
-            logInfo("[CACHE] Valid version cache ($versionCode) found. Applying ${cachedTargets.size} target hooks.")
+            logInfo("[CACHE] Valid version cache ($versionCode) found.")
             cachedTargets.forEach { target ->
                 val parts = target.split("|")
                 if (parts.size == 2) hookMainControllerClass(classLoader, parts[0], parts[1])
             }
         } else {
-            logInfo("[UPDATE] App version updated or cache missing. Initiating async DexKit analysis...")
+            logInfo("[UPDATE] App version updated or cache missing. Initiating DexKit...")
             backgroundExecutor.submit {
                 try {
                     performSearchAndHookSynchronous(context, classLoader, versionCode, cachePrefs)
-                    logInfo("[SUCCESS] Background DexKit analysis finished successfully.")
+                    logInfo("[SUCCESS] Background DexKit analysis finished.")
                     
                     Handler(Looper.getMainLooper()).post {
                         try {
@@ -114,7 +117,6 @@ class PydroidHook : AppHook {
     private fun loadDexKitSafely() {
         try {
             System.loadLibrary("dexkit")
-            logInfo("[DEBUG] libdexkit.so native payload loaded natively.")
         } catch (e: UnsatisfiedLinkError) {
             logInfo("[WARN] Native load failed. Invoking absolute path extraction.")
             try {
@@ -126,12 +128,12 @@ class PydroidHook : AppHook {
                 if (appInfo != null) {
                     val libPath = "${appInfo.nativeLibraryDir}/libdexkit.so"
                     System.load(libPath)
-                    logInfo("[SUCCESS] libdexkit.so injected from absolute path: $libPath")
+                    logInfo("[SUCCESS] libdexkit.so injected from absolute path.")
                 } else {
                     throw UnsatisfiedLinkError("Could not resolve module ApplicationInfo")
                 }
             } catch (e2: Throwable) {
-                logError("[FATAL] Complete failure loading DexKit Native library.", e2)
+                logError("[FATAL] Complete failure loading DexKit.", e2)
                 throw e2
             }
         }
@@ -146,7 +148,6 @@ class PydroidHook : AppHook {
 
         val targets = mutableSetOf<String>()
         try {
-            logInfo("[SEARCH] DexKit bridge mapping target structure...")
             DexKitBridge.create(context.applicationInfo.sourceDir).use { bridge ->
                 bridge.findMethod { matcher { paramTypes(NAV_VIEW_CLASS); returnType("void") } }.forEach { m ->
                     if (!m.className.startsWith("com.google.") && !m.className.startsWith("android.") && !m.className.contains("Activity")) {
@@ -154,7 +155,7 @@ class PydroidHook : AppHook {
                     }
                 }
             }
-            logInfo("[SEARCH] Extracted ${targets.size} potential controller vectors.")
+            logInfo("[SEARCH] Extracted ${targets.size} controller vectors.")
             cachePrefs.edit().putInt(KEY_VERSION, versionCode).putStringSet(KEY_HOOK_TARGETS, targets).apply()
             
             targets.forEach { target ->
@@ -180,7 +181,7 @@ class PydroidHook : AppHook {
                     } catch (_: Throwable) {}
                 }
             }
-            logInfo("[HOOK] Controller class $className neutralized. Premium state forced on $boolMethodHooks flags.")
+            logInfo("[HOOK] Controller $className neutralized. Premium state forced on $boolMethodHooks flags.")
         } catch (t: Throwable) { 
             logError("[ERROR] Hook implementation failed for class $className", t) 
         }
@@ -204,18 +205,21 @@ class PydroidHook : AppHook {
                                 val targetView = activity.findViewById<View>(resId)
                                 if (targetView != null && targetView.visibility != View.GONE) {
                                     nukeView(targetView)
-                                    logInfo("[UI] Target view '$TARGET_VIEW_NAME' located and neutralized dynamically.")
+                                    logInfo("[UI] Target view '$TARGET_VIEW_NAME' neutralized.")
+                                    
+                                    if (rootView.viewTreeObserver.isAlive) {
+                                        rootView.viewTreeObserver.removeOnGlobalLayoutListener(this)
+                                    }
                                 }
                             }
                         }
                         
                         rootView.viewTreeObserver.addOnGlobalLayoutListener(layoutListener)
-                        logInfo("[UI] Attached ViewTreeObserver to MainActivity.")
                     }
                 }
                 r
             }
-            logInfo("[SUCCESS] Activity lifecycle observation active (with ViewTreeObserver).")
+            logInfo("[SUCCESS] Activity lifecycle observation active.")
         } catch (t: Throwable) { 
             logError("[ERROR] Failed to attach to Activity lifecycle", t) 
         }

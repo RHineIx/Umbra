@@ -24,6 +24,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.lang.ref.WeakReference
+import kotlin.system.exitProcess
 
 class MainActivity : AppCompatActivity() {
 
@@ -57,17 +58,8 @@ class MainActivity : AppCompatActivity() {
         setContentView(R.layout.activity_main)
 
         activityRef = WeakReference(this)
+        registerXposedService()
 
-        if (!isListenerRegistered) {
-            try {
-                XposedServiceHelper.registerListener(serviceListener)
-                isListenerRegistered = true
-            } catch (_: Throwable) {
-                // Fallback for environments where service isn't available
-            }
-        }
-
-        // Sync state immediately in case service bound before activity creation
         viewModel.updateServiceStatus(xposedService)
 
         initViews()
@@ -77,6 +69,29 @@ class MainActivity : AppCompatActivity() {
     override fun onResume() {
         super.onResume()
         activityRef = WeakReference(this)
+        
+        registerXposedService()
+        
+        viewModel.updateServiceStatus(xposedService)
+    }
+
+    private fun registerXposedService() {
+        if (!isListenerRegistered) {
+            try {
+                XposedServiceHelper.registerListener(serviceListener)
+                isListenerRegistered = true
+            } catch (_: Throwable) {
+            }
+        }
+    }
+
+    override fun onDestroy() {
+        super.onDestroy()
+        if (isFinishing) {
+            activityRef.clear()
+            xposedService = null
+            exitProcess(0)
+        }
     }
 
     private fun initViews() {

@@ -15,8 +15,7 @@ import io.github.libxposed.api.XposedModuleInterface
 import org.luckypray.dexkit.DexKitBridge
 import org.luckypray.dexkit.wrap.DexMethod
 import java.lang.reflect.Modifier
-import java.util.concurrent.ExecutorService
-import java.util.concurrent.Executors
+import java.util.concurrent.*
 
 @SuppressLint("NewApi")
 class GboardHook : AppHook {
@@ -41,7 +40,11 @@ class GboardHook : AppHook {
     private lateinit var xposedModule: XposedModule
     private val limitPattern = "(?i)limit\\s+\\d+".toRegex()
     
-    private val backgroundExecutor: ExecutorService = Executors.newSingleThreadExecutor()
+    private val backgroundExecutor: ExecutorService = ThreadPoolExecutor(
+        0, 1,
+        60L, TimeUnit.SECONDS,
+        LinkedBlockingQueue<Runnable>()
+    )
 
     private fun logInfo(message: String) {
         if (logsEnabled) xposedModule.log(Log.INFO, TAG, message)
@@ -67,7 +70,7 @@ class GboardHook : AppHook {
                 try {
                     val context = chain.args[0] as Context
                     logInfo("[INFO] Application.attach intercepted. Initializing hooks...")
-                    setupReactivePrefs()
+                    setupPrefs()
                     hookClipboardProvider(classLoader, context)
                     handleDynamicAndPrivacyHooks(context, classLoader)
                 } catch (t: Throwable) {
@@ -80,17 +83,12 @@ class GboardHook : AppHook {
         }
     }
 
-    private fun setupReactivePrefs() {
+    private fun setupPrefs() {
         try {
             val prefs = xposedModule.getRemotePreferences(Constants.PREFS_FILE)
             refreshConfig(prefs)
-            prefs.registerOnSharedPreferenceChangeListener { p, _ -> 
-                logInfo("[INFO] Remote preferences changed. Refreshing configuration.")
-                refreshConfig(p) 
-            }
-            logInfo("[SUCCESS] Reactive preferences bound successfully.")
         } catch (t: Throwable) { 
-            logError("[ERROR] Failed to bind reactive preferences", t) 
+            logError("[ERROR] Failed to fetch remote preferences", t) 
         }
     }
 
@@ -99,7 +97,7 @@ class GboardHook : AppHook {
         val days = prefs.getInt(Constants.KEY_GBOARD_RETENTION_DAYS, Constants.DEFAULT_GBOARD_RETENTION)
         cachedRetentionMs = days * 86400000L
         logsEnabled = prefs.getInt(Constants.KEY_GLOBAL_LOGS, 0) == 1
-        logInfo("[CONFIG] Limit: $cachedLimit items | Retention: $days days | Logs: $logsEnabled")
+        logInfo("[CONFIG] Limit: $cachedLimit | Retention: $days days | Logs: $logsEnabled")
     }
 
     private fun hookClipboardProvider(classLoader: ClassLoader, context: Context) {
@@ -118,7 +116,7 @@ class GboardHook : AppHook {
                         backgroundExecutor.submit {
                             try { 
                                 val deleted = context.contentResolver.delete(uri, "timestamp < ?", arrayOf((now - cachedRetentionMs).toString())) 
-                                logInfo("[CLEANUP] Background execution removed $deleted expired clipboard items.")
+                                if (deleted > 0) logInfo("[CLEANUP] Removed $deleted expired clipboard items.")
                             } catch (e: Throwable) { 
                                 logError("[ERROR] Background cleanup task failed", e) 
                             }
@@ -129,7 +127,6 @@ class GboardHook : AppHook {
                 if (limitPattern.containsMatchIn(sortOrder)) {
                     val newArgs = chain.args.toTypedArray()
                     newArgs[4] = sortOrder.replace(limitPattern, "LIMIT $cachedLimit")
-                    logInfo("[HOOK] Intercepted clipboard query. Injected new limit: $cachedLimit.")
                     return@intercept chain.proceed(newArgs)
                 }
                 return@intercept chain.proceed()
@@ -146,11 +143,11 @@ class GboardHook : AppHook {
         val isSameVersion = (versionCode != -1 && versionCode == cachePrefs.getInt(KEY_VERSION, -1))
 
         if (isSameVersion) {
-            logInfo("[CACHE] Version code matches ($versionCode). Applying cached hook offsets.")
+            logInfo("[CACHE] Version matches ($versionCode). Applying cached offsets.")
             applyDynamicHooks(classLoader, cachePrefs.getString(KEY_METHOD_CONFIG, null), cachePrefs.getString(KEY_METHOD_CLEANUP, null), cachePrefs.getString(KEY_METHOD_RETENTION, null))
             applyPrivacyHooks(classLoader, cachePrefs.getString(KEY_CLASS_METRICS, null))
         } else {
-            logInfo("[UPDATE] New version code detected ($versionCode). Initiating DexKit async background search...")
+            logInfo("[UPDATE] New version ($versionCode) detected. Initiating DexKit search...")
             backgroundExecutor.submit {
                 try {
                     performBackgroundSearchAndHook(context, classLoader, versionCode, cachePrefs)
@@ -158,7 +155,7 @@ class GboardHook : AppHook {
                     
                     Handler(Looper.getMainLooper()).post {
                         try {
-                            Toast.makeText(context, "Umbra: Gboard offsets updated. Please restart the app.", Toast.LENGTH_LONG).show()
+                            Toast.makeText(context, "Umbra: Gboard offsets updated. Please restart.", Toast.LENGTH_LONG).show()
                         } catch (e: Throwable) {
                             logError("[WARN] Context invalid for Toast display", e)
                         }
@@ -173,7 +170,6 @@ class GboardHook : AppHook {
     private fun loadDexKitSafely() {
         try {
             System.loadLibrary("dexkit")
-            logInfo("[DEBUG] libdexkit.so loaded via standard System.loadLibrary.")
         } catch (e: UnsatisfiedLinkError) {
             logInfo("[WARN] Standard loadLibrary failed. Attempting absolute path fallback...")
             try {
@@ -185,12 +181,12 @@ class GboardHook : AppHook {
                 if (appInfo != null) {
                     val libPath = "${appInfo.nativeLibraryDir}/libdexkit.so"
                     System.load(libPath)
-                    logInfo("[SUCCESS] libdexkit.so loaded successfully from absolute path: $libPath")
+                    logInfo("[SUCCESS] libdexkit.so loaded from absolute path.")
                 } else {
                     throw UnsatisfiedLinkError("Could not resolve module ApplicationInfo")
                 }
             } catch (e2: Throwable) {
-                logError("[FATAL] Failed to load libdexkit.so natively. DexKit will not function.", e2)
+                logError("[FATAL] Failed to load libdexkit.so.", e2)
                 throw e2
             }
         }
@@ -204,7 +200,6 @@ class GboardHook : AppHook {
         }
 
         try {
-            logInfo("[SEARCH] DexKitBridge instantiated. Analyzing base.apk...")
             DexKitBridge.create(context.applicationInfo.sourceDir).use { bridge ->
                 val adapterClass = bridge.findClass { matcher { usingStrings("com/google/android/apps/inputmethod/libs/clipboard/ClipboardAdapter") } }.firstOrNull()
                 val cleanup = if (adapterClass != null) bridge.findMethod { matcher { returnType("void"); usingNumbers(5) } }.firstOrNull { it.className == adapterClass.name }?.toDexMethod()?.serialize() else null
@@ -220,7 +215,7 @@ class GboardHook : AppHook {
                 applyPrivacyHooks(classLoader, metrics)
             }
         } catch (t: Throwable) { 
-            logError("[ERROR] Exception occurred during DexKit search phase", t) 
+            logError("[ERROR] Exception occurred during DexKit search", t) 
         }
     }
 
@@ -238,16 +233,14 @@ class GboardHook : AppHook {
                         } catch (_: Exception) { "" }
                         
                         if (name == "enable_clipboard_entity_extraction" || name == "enable_clipboard_query_refactoring") {
-                            logInfo("[HOOK] Blocked remote config flag: $name")
                             false 
                         } else {
                             chain.proceed()
                         }
                     }
-                    logInfo("[SUCCESS] Dynamic configuration hook applied.")
                 }
             } catch (e: Throwable) { 
-                logError("[WARN] Dynamic config target not found or invalid. Skipping.", e) 
+                logError("[WARN] Dynamic config target not found.", e) 
             }
         }
 
@@ -256,9 +249,8 @@ class GboardHook : AppHook {
                 val dm = DexMethod(cleanup)
                 val cleanupMethod = classLoader.loadClass(dm.className).getDeclaredMethod(dm.name)
                 xposedModule.hook(cleanupMethod).intercept { null }
-                logInfo("[SUCCESS] Local cleanup protocol neutralized.")
             } catch (e: Throwable) { 
-                logInfo("[WARN] Local cleanup target not found. Likely removed in this version. Skipping.") 
+                logInfo("[WARN] Local cleanup target not found.") 
             }
         }
 
@@ -267,9 +259,8 @@ class GboardHook : AppHook {
                 val dm = DexMethod(retention)
                 val retentionMethod = classLoader.loadClass(dm.className).getDeclaredMethod(dm.name)
                 xposedModule.hook(retentionMethod).intercept { null }
-                logInfo("[SUCCESS] Internal retention logic neutralized.")
             } catch (e: Throwable) { 
-                logInfo("[WARN] Internal retention target not found. Likely removed in this version. Skipping.") 
+                logInfo("[WARN] Internal retention target not found.") 
             }
         }
     }
@@ -285,9 +276,9 @@ class GboardHook : AppHook {
                         hookedCount++
                     }
                 }
-                logInfo("[SUCCESS] UserMetrics silenced. Hooked $hookedCount public tracking methods.")
+                logInfo("[SUCCESS] UserMetrics silenced. Hooked $hookedCount methods.")
             } catch (e: Throwable) { 
-                logError("[WARN] Failed to apply UserMetrics privacy hooks. Class might be missing.", e) 
+                logError("[WARN] Failed to apply UserMetrics privacy hooks.", e) 
             }
         }
     }

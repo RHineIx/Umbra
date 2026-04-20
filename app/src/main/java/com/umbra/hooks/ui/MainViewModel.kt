@@ -5,15 +5,13 @@ import androidx.lifecycle.viewModelScope
 import com.umbra.hooks.utils.Constants
 import com.umbra.hooks.utils.PrefsManager
 import io.github.libxposed.service.XposedService
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
-/**
- * ViewModel to handle UI state and Xposed Service interaction.
- * Follows Clean Architecture principles by decoupling logic from MainActivity.
- */
 class MainViewModel : ViewModel() {
 
     data class UiState(
@@ -30,27 +28,37 @@ class MainViewModel : ViewModel() {
 
     fun updateServiceStatus(service: XposedService?) {
         xposedService = service
-        viewModelScope.launch {
-            if (service != null) {
-                val logs = PrefsManager.getInt(service, Constants.KEY_GLOBAL_LOGS, 0) == 1
-                _uiState.value = UiState(
+        
+        if (service != null) {
+            _uiState.update { 
+                it.copy(
                     isServiceActive = true,
                     frameworkName = service.frameworkName,
-                    frameworkVersion = service.frameworkVersion,
-                    logsEnabled = logs
+                    frameworkVersion = service.frameworkVersion
                 )
-            } else {
-                _uiState.value = UiState(isServiceActive = false)
             }
+
+            viewModelScope.launch(Dispatchers.IO) {
+                try {
+                    val logs = PrefsManager.getInt(service, Constants.KEY_GLOBAL_LOGS, 0) == 1
+                    _uiState.update { it.copy(logsEnabled = logs) }
+                } catch (_: Throwable) {
+                }
+            }
+        } else {
+            _uiState.update { it.copy(isServiceActive = false) }
         }
     }
 
     fun toggleLogs(enabled: Boolean) {
         val service = xposedService ?: return
-        viewModelScope.launch {
-            val success = PrefsManager.putInt(service, Constants.KEY_GLOBAL_LOGS, if (enabled) 1 else 0)
-            if (success) {
-                _uiState.value = _uiState.value.copy(logsEnabled = enabled)
+        
+        _uiState.update { it.copy(logsEnabled = enabled) }
+        
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                PrefsManager.putInt(service, Constants.KEY_GLOBAL_LOGS, if (enabled) 1 else 0)
+            } catch (_: Throwable) {
             }
         }
     }
