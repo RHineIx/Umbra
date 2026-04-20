@@ -16,8 +16,11 @@ import android.view.animation.DecelerateInterpolator
 import android.widget.ImageView
 import android.widget.TextView
 import android.widget.Toast
+import androidx.activity.enableEdgeToEdge
 import androidx.activity.viewModels
 import androidx.appcompat.app.AppCompatActivity
+import androidx.core.view.ViewCompat
+import androidx.core.view.WindowInsetsCompat
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.repeatOnLifecycle
@@ -60,6 +63,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
+        enableEdgeToEdge()
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
 
@@ -75,9 +79,7 @@ class MainActivity : AppCompatActivity() {
     override fun onResume() {
         super.onResume()
         activityRef = WeakReference(this)
-        
         registerXposedService()
-        
         viewModel.updateServiceStatus(xposedService)
     }
 
@@ -101,6 +103,21 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun initViews() {
+        val mainContainer = findViewById<ViewGroup>(R.id.mainContainer)
+        
+        ViewCompat.setOnApplyWindowInsetsListener(mainContainer) { view, insets ->
+            val systemBars = insets.getInsets(WindowInsetsCompat.Type.systemBars())
+            val padding24px = TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, 24f, resources.displayMetrics).toInt()
+            
+            view.setPadding(
+                systemBars.left + padding24px,
+                systemBars.top + padding24px,
+                systemBars.right + padding24px,
+                systemBars.bottom + padding24px
+            )
+            insets
+        }
+
         val cardStatus = findViewById<MaterialCardView>(R.id.cardStatus)
         val layoutExpandedInfo = findViewById<View>(R.id.layoutExpandedInfo)
         val tvAppVersion = findViewById<TextView>(R.id.tvAppVersion)

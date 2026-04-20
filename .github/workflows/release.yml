@@ -16,10 +16,12 @@ on:
 permissions:
   contents: write
 
-# Cancel any previous runs of this workflow on the same branch to save runner minutes
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
+
+env:
+  GRADLE_OPTS: "-Dorg.gradle.jvmargs='-Xmx4g -XX:+HeapDumpOnOutOfMemoryError' -Dorg.gradle.parallel=true -Dorg.gradle.caching=true"
 
 jobs:
   build-and-release:
@@ -39,7 +41,7 @@ jobs:
           java-version: '17'
           distribution: 'temurin'
 
-      - name: 🐘 Setup Gradle (Optimized Caching)
+      - name: 🐘 Setup Gradle (Optimized v4 Caching with zstd)
         uses: gradle/actions/setup-gradle@v4
         with:
           # Only write to cache if building from the main branch. Other branches will only read.
@@ -50,7 +52,6 @@ jobs:
       - name: 🏷️ Extract Version Information
         id: extract_version
         run: |
-          # Robustly extract versionCode and versionName from app/build.gradle.kts
           VERSION_CODE=$(grep -m 1 'versionCode\s*=\s*' app/build.gradle.kts | grep -o '[0-9]\+')
           VERSION_NAME=$(grep -m 1 'versionName\s*=\s*' app/build.gradle.kts | cut -d'"' -f2)
           
@@ -62,7 +63,6 @@ jobs:
           echo "VERSION_CODE=$VERSION_CODE" >> $GITHUB_ENV
           echo "VERSION_NAME=$VERSION_NAME" >> $GITHUB_ENV
           
-          # Configure variables based on the selected release channel
           if [ "${{ github.event.inputs.release_type }}" == "stable" ]; then
             echo "TAG_NAME=v${VERSION_NAME}" >> $GITHUB_ENV
             echo "RELEASE_NAME=Umbra v${VERSION_NAME} (Stable)" >> $GITHUB_ENV
@@ -90,8 +90,7 @@ jobs:
           SIGNING_STORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
         run: |
           chmod +x gradlew
-          # Use build-cache and parallel execution for faster builds
-          ./gradlew assembleRelease --no-daemon --parallel --build-cache
+          ./gradlew assembleRelease --no-daemon
 
       - name: 🧹 Secure Keystore Cleanup
         if: always() # Ensure this runs even if the build fails
@@ -115,6 +114,7 @@ jobs:
           name: Umbra-APK-${{ env.TAG_NAME }}
           path: ${{ env.APK_FINAL_PATH }}
           retention-days: 14 # Keep artifact for 14 days in the Actions tab
+          compression-level: 0 # Zstd compression is handled dynamically; 0 saves CPU time on already compressed APKs
 
       - name: 🎉 Publish GitHub Release
         uses: softprops/action-gh-release@v2
