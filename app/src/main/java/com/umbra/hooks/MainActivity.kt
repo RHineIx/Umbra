@@ -5,7 +5,9 @@ import android.animation.AnimatorListenerAdapter
 import android.animation.ArgbEvaluator
 import android.animation.ValueAnimator
 import android.annotation.SuppressLint
+import android.content.ComponentName
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.content.res.ColorStateList
 import android.net.Uri
 import android.os.Bundle
@@ -39,6 +41,7 @@ class MainActivity : AppCompatActivity() {
 
     private val viewModel: MainViewModel by viewModels()
     private lateinit var swGlobalLogs: MaterialSwitch
+    private lateinit var swHideIcon: MaterialSwitch // المفتاح الجديد
     private var currentActiveState: Boolean? = null
 
     companion object {
@@ -70,6 +73,7 @@ class MainActivity : AppCompatActivity() {
         activityRef = WeakReference(this)
         registerXposedService()
 
+        viewModel.checkLauncherIconState(this) // قراءة حالة الأيقونة
         viewModel.updateServiceStatus(xposedService)
 
         initViews()
@@ -202,6 +206,13 @@ class MainActivity : AppCompatActivity() {
         swGlobalLogs.setOnCheckedChangeListener { _, isChecked ->
             viewModel.toggleLogs(isChecked)
         }
+
+        swHideIcon = findViewById(R.id.swHideIcon)
+        swHideIcon.setOnCheckedChangeListener { buttonView, isChecked ->
+            if (buttonView.isPressed) { // التأكد من أن التغيير ناتج عن المستخدم وليس عن طريق الكود
+                toggleLauncherIcon(isChecked)
+            }
+        }
     }
 
     private fun observeState() {
@@ -209,11 +220,31 @@ class MainActivity : AppCompatActivity() {
             repeatOnLifecycle(Lifecycle.State.STARTED) {
                 viewModel.uiState.collect { state ->
                     updateUI(state.isServiceActive, state.frameworkName, state.frameworkVersion)
+                    
                     if (swGlobalLogs.isChecked != state.logsEnabled) {
                         swGlobalLogs.isChecked = state.logsEnabled
                     }
+                    
+                    if (swHideIcon.isChecked != state.isIconHidden) {
+                        swHideIcon.isChecked = state.isIconHidden
+                    }
                 }
             }
+        }
+    }
+
+    private fun toggleLauncherIcon(hide: Boolean) {
+        val componentName = ComponentName(this, "com.umbra.hooks.MainActivityAlias")
+        val state = if (hide) PackageManager.COMPONENT_ENABLED_STATE_DISABLED else PackageManager.COMPONENT_ENABLED_STATE_ENABLED
+        
+        packageManager.setComponentEnabledSetting(
+            componentName,
+            state,
+            PackageManager.DONT_KILL_APP
+        )
+        
+        if (hide) {
+            Toast.makeText(this, R.string.toast_icon_hidden, Toast.LENGTH_LONG).show()
         }
     }
 

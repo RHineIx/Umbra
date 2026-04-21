@@ -18,6 +18,10 @@
     
     <string name="title_lsp_logs">LSP Logs</string>
     <string name="desc_enable_logs">Enable Module Logs</string>
+
+    <string name="title_hide_icon">Hide Launcher Icon</string>
+    <string name="desc_hide_icon">Remove app icon from app drawer</string>
+    <string name="toast_icon_hidden">Icon hidden. Open via LSPosed manager.</string>
     
     <string name="toast_root_denied">Root denied</string>
     <string name="toast_device_not_rooted">Device not rooted</string>

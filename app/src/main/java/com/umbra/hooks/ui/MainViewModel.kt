@@ -1,5 +1,8 @@
 package com.umbra.hooks.ui
 
+import android.content.ComponentName
+import android.content.Context
+import android.content.pm.PackageManager
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.umbra.hooks.utils.Constants
@@ -18,13 +21,21 @@ class MainViewModel : ViewModel() {
         val isServiceActive: Boolean = false,
         val frameworkName: String? = null,
         val frameworkVersion: String? = null,
-        val logsEnabled: Boolean = false
+        val logsEnabled: Boolean = false,
+        val isIconHidden: Boolean = false // الحالة الجديدة
     )
 
     private val _uiState = MutableStateFlow(UiState())
     val uiState: StateFlow<UiState> = _uiState.asStateFlow()
 
     private var xposedService: XposedService? = null
+
+    // جلب حالة الأيقونة عند بدء التشغيل
+    fun checkLauncherIconState(context: Context) {
+        val componentName = ComponentName(context, "com.umbra.hooks.MainActivityAlias")
+        val isHidden = context.packageManager.getComponentEnabledSetting(componentName) == PackageManager.COMPONENT_ENABLED_STATE_DISABLED
+        _uiState.update { it.copy(isIconHidden = isHidden) }
+    }
 
     fun updateServiceStatus(service: XposedService?) {
         xposedService = service
