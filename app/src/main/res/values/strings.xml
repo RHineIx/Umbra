@@ -1,6 +1,6 @@
 <resources>
     <string name="app_name">Umbra</string>
-    <string name="app_description">Module to manipulate app behaviors</string>
+    <string name="app_description">By @RHibeIx</string>
     
     <string name="title_lsposed_module">LSPosed Module</string>
     <string name="title_module_activated">Module Activated</string>

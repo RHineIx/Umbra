@@ -15,6 +15,7 @@ import android.util.TypedValue
 import android.view.View
 import android.view.ViewGroup
 import android.view.animation.DecelerateInterpolator
+import android.widget.FrameLayout
 import android.widget.ImageView
 import android.widget.TextView
 import android.widget.Toast
@@ -41,7 +42,7 @@ class MainActivity : AppCompatActivity() {
 
     private val viewModel: MainViewModel by viewModels()
     private lateinit var swGlobalLogs: MaterialSwitch
-    private lateinit var swHideIcon: MaterialSwitch // المفتاح الجديد
+    private lateinit var swHideIcon: MaterialSwitch
     private var currentActiveState: Boolean? = null
 
     companion object {
@@ -73,7 +74,7 @@ class MainActivity : AppCompatActivity() {
         activityRef = WeakReference(this)
         registerXposedService()
 
-        viewModel.checkLauncherIconState(this) // قراءة حالة الأيقونة
+        viewModel.checkLauncherIconState(this)
         viewModel.updateServiceStatus(xposedService)
 
         initViews()
@@ -124,6 +125,9 @@ class MainActivity : AppCompatActivity() {
 
         val cardStatus = findViewById<MaterialCardView>(R.id.cardStatus)
         val layoutExpandedInfo = findViewById<View>(R.id.layoutExpandedInfo)
+        val layoutSettingsWrapper = findViewById<FrameLayout>(R.id.layoutSettingsWrapper)
+        val cardSettings = findViewById<MaterialCardView>(R.id.cardSettings)
+        
         val tvAppVersion = findViewById<TextView>(R.id.tvAppVersion)
         val tvDeveloperInfo = findViewById<TextView>(R.id.tvDeveloperInfo)
 
@@ -145,52 +149,82 @@ class MainActivity : AppCompatActivity() {
         }
 
         var isExpanded = false
-        var heightAnimator: ValueAnimator? = null
+        var expandAnimator: ValueAnimator? = null
 
         cardStatus.setOnClickListener {
-            heightAnimator?.cancel()
+            expandAnimator?.cancel()
 
-            if (isExpanded) {
-                val startHeight = layoutExpandedInfo.height
-                heightAnimator = ValueAnimator.ofInt(startHeight, 0).apply {
-                    duration = 200
-                    interpolator = DecelerateInterpolator()
-                    addUpdateListener { animation ->
-                        layoutExpandedInfo.layoutParams.height = animation.animatedValue as Int
-                        layoutExpandedInfo.requestLayout()
-                    }
-                    addListener(object : AnimatorListenerAdapter() {
-                        override fun onAnimationEnd(animation: Animator) {
-                            layoutExpandedInfo.visibility = View.GONE
-                        }
-                    })
-                    start()
-                }
-                isExpanded = false
-            } else {
+            if (!isExpanded) {
+                // التحضير لعملية التوسيع
                 layoutExpandedInfo.visibility = View.VISIBLE
+                layoutSettingsWrapper.visibility = View.VISIBLE
                 
                 val widthSpec = View.MeasureSpec.makeMeasureSpec(cardStatus.width, View.MeasureSpec.EXACTLY)
                 val heightSpec = View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED)
+                
                 layoutExpandedInfo.measure(widthSpec, heightSpec)
-                val targetHeight = layoutExpandedInfo.measuredHeight
-                val startHeight = layoutExpandedInfo.height
+                val targetInfoHeight = layoutExpandedInfo.measuredHeight
+                
+                layoutSettingsWrapper.measure(widthSpec, heightSpec)
+                val targetSettingsHeight = layoutSettingsWrapper.measuredHeight
 
-                heightAnimator = ValueAnimator.ofInt(startHeight, targetHeight).apply {
-                    duration = 200
+                expandAnimator = ValueAnimator.ofFloat(0f, 1f).apply {
+                    duration = 350
                     interpolator = DecelerateInterpolator()
                     addUpdateListener { animation ->
-                        layoutExpandedInfo.layoutParams.height = animation.animatedValue as Int
+                        val fraction = animation.animatedValue as Float
+                        
+                        layoutExpandedInfo.layoutParams.height = (targetInfoHeight * fraction).toInt()
                         layoutExpandedInfo.requestLayout()
+
+                        layoutSettingsWrapper.layoutParams.height = (targetSettingsHeight * fraction).toInt()
+                        layoutSettingsWrapper.requestLayout()
+
+                        // إزاحة عمودية لبطاقة الإعدادات لتبدو وكأنها تنزلق من تحت بطاقة الحالة
+                        cardSettings.translationY = -targetSettingsHeight * (1f - fraction)
+                        // تدرج الشفافية لتعزيز التأثير البصري
+                        cardSettings.alpha = 0.5f + (0.5f * fraction)
                     }
                     addListener(object : AnimatorListenerAdapter() {
                         override fun onAnimationEnd(animation: Animator) {
                             layoutExpandedInfo.layoutParams.height = ViewGroup.LayoutParams.WRAP_CONTENT
+                            layoutSettingsWrapper.layoutParams.height = ViewGroup.LayoutParams.WRAP_CONTENT
+                            cardSettings.translationY = 0f
+                            cardSettings.alpha = 1f
                         }
                     })
                     start()
                 }
                 isExpanded = true
+            } else {
+                // التحضير لعملية الطي
+                val startInfoHeight = layoutExpandedInfo.height
+                val startSettingsHeight = layoutSettingsWrapper.height
+
+                expandAnimator = ValueAnimator.ofFloat(1f, 0f).apply {
+                    duration = 350
+                    interpolator = DecelerateInterpolator()
+                    addUpdateListener { animation ->
+                        val fraction = animation.animatedValue as Float
+                        
+                        layoutExpandedInfo.layoutParams.height = (startInfoHeight * fraction).toInt()
+                        layoutExpandedInfo.requestLayout()
+
+                        layoutSettingsWrapper.layoutParams.height = (startSettingsHeight * fraction).toInt()
+                        layoutSettingsWrapper.requestLayout()
+
+                        cardSettings.translationY = -startSettingsHeight * (1f - fraction)
+                        cardSettings.alpha = 0.5f + (0.5f * fraction)
+                    }
+                    addListener(object : AnimatorListenerAdapter() {
+                        override fun onAnimationEnd(animation: Animator) {
+                            layoutExpandedInfo.visibility = View.GONE
+                            layoutSettingsWrapper.visibility = View.GONE
+                        }
+                    })
+                    start()
+                }
+                isExpanded = false
             }
         }
 
@@ -209,7 +243,7 @@ class MainActivity : AppCompatActivity() {
 
         swHideIcon = findViewById(R.id.swHideIcon)
         swHideIcon.setOnCheckedChangeListener { buttonView, isChecked ->
-            if (buttonView.isPressed) { // التأكد من أن التغيير ناتج عن المستخدم وليس عن طريق الكود
+            if (buttonView.isPressed) {
                 toggleLauncherIcon(isChecked)
             }
         }
