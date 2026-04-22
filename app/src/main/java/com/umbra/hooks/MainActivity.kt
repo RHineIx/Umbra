@@ -14,7 +14,7 @@ import android.os.Bundle
 import android.util.TypedValue
 import android.view.View
 import android.view.ViewGroup
-import android.view.animation.DecelerateInterpolator
+import android.view.animation.PathInterpolator
 import android.widget.FrameLayout
 import android.widget.ImageView
 import android.widget.TextView
@@ -36,6 +36,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.lang.ref.WeakReference
+import kotlin.math.abs
 import kotlin.system.exitProcess
 
 class MainActivity : AppCompatActivity() {
@@ -86,6 +87,8 @@ class MainActivity : AppCompatActivity() {
         activityRef = WeakReference(this)
         registerXposedService()
         viewModel.updateServiceStatus(xposedService)
+        // Ensure the launcher icon switch accurately reflects system state when returning to the app
+        viewModel.checkLauncherIconState(this)
     }
 
     private fun registerXposedService() {
@@ -150,81 +153,97 @@ class MainActivity : AppCompatActivity() {
 
         var isExpanded = false
         var expandAnimator: ValueAnimator? = null
+        var currentFraction = 0f
+        var targetInfoHeight = 0
+        var targetSettingsHeight = 0
 
         cardStatus.setOnClickListener {
+            // Cancel existing animation, freezing currentFraction at the exact interaction point
             expandAnimator?.cancel()
 
-            if (!isExpanded) {
-                // التحضير لعملية التوسيع
-                layoutExpandedInfo.visibility = View.VISIBLE
-                layoutSettingsWrapper.visibility = View.VISIBLE
-                
-                val widthSpec = View.MeasureSpec.makeMeasureSpec(cardStatus.width, View.MeasureSpec.EXACTLY)
-                val heightSpec = View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED)
-                
-                layoutExpandedInfo.measure(widthSpec, heightSpec)
-                val targetInfoHeight = layoutExpandedInfo.measuredHeight
-                
-                layoutSettingsWrapper.measure(widthSpec, heightSpec)
-                val targetSettingsHeight = layoutSettingsWrapper.measuredHeight
+            // Prepare views for measurement if they are completely hidden
+            if (layoutExpandedInfo.visibility == View.GONE) {
+                layoutExpandedInfo.visibility = View.INVISIBLE
+                layoutSettingsWrapper.visibility = View.INVISIBLE
+            }
 
-                expandAnimator = ValueAnimator.ofFloat(0f, 1f).apply {
-                    duration = 350
-                    interpolator = DecelerateInterpolator()
-                    addUpdateListener { animation ->
-                        val fraction = animation.animatedValue as Float
-                        
-                        layoutExpandedInfo.layoutParams.height = (targetInfoHeight * fraction).toInt()
-                        layoutExpandedInfo.requestLayout()
+            // Unbound Measurement Specs
+            val widthSpec = View.MeasureSpec.makeMeasureSpec(cardStatus.width, View.MeasureSpec.EXACTLY)
+            val heightSpec = View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED)
 
-                        layoutSettingsWrapper.layoutParams.height = (targetSettingsHeight * fraction).toInt()
-                        layoutSettingsWrapper.requestLayout()
+            // Safely measure layoutExpandedInfo without causing UI flicker
+            val lpInfo = layoutExpandedInfo.layoutParams
+            val originalInfoHeight = lpInfo.height
+            lpInfo.height = ViewGroup.LayoutParams.WRAP_CONTENT
+            layoutExpandedInfo.layoutParams = lpInfo
+            layoutExpandedInfo.measure(widthSpec, heightSpec)
+            targetInfoHeight = layoutExpandedInfo.measuredHeight
+            lpInfo.height = originalInfoHeight
+            layoutExpandedInfo.layoutParams = lpInfo
 
-                        // إزاحة عمودية لبطاقة الإعدادات لتبدو وكأنها تنزلق من تحت بطاقة الحالة
-                        cardSettings.translationY = -targetSettingsHeight * (1f - fraction)
-                        // تدرج الشفافية لتعزيز التأثير البصري
-                        cardSettings.alpha = 0.5f + (0.5f * fraction)
+            // Safely measure layoutSettingsWrapper without causing UI flicker
+            val lpSettings = layoutSettingsWrapper.layoutParams
+            val originalSettingsHeight = lpSettings.height
+            lpSettings.height = ViewGroup.LayoutParams.WRAP_CONTENT
+            layoutSettingsWrapper.layoutParams = lpSettings
+            layoutSettingsWrapper.measure(widthSpec, heightSpec)
+            targetSettingsHeight = layoutSettingsWrapper.measuredHeight
+            lpSettings.height = originalSettingsHeight
+            layoutSettingsWrapper.layoutParams = lpSettings
+
+            // Make sure views are visible to draw the animation frames
+            layoutExpandedInfo.visibility = View.VISIBLE
+            layoutSettingsWrapper.visibility = View.VISIBLE
+
+            val startFraction = currentFraction
+            val targetFraction = if (isExpanded) 0f else 1f
+            isExpanded = !isExpanded
+
+            expandAnimator = ValueAnimator.ofFloat(startFraction, targetFraction).apply {
+                // Adjust duration dynamically based on the remaining distance to travel. Max duration is 400ms.
+                duration = (400 * abs(targetFraction - startFraction)).toLong().coerceAtLeast(50L)
+
+                // Use a fluid Bezier curve that matches modern aesthetic (no bouncy glitches on spam clicks)
+                interpolator = PathInterpolator(0.3f, 0f, 0.1f, 1f)
+
+                addListener(object : AnimatorListenerAdapter() {
+                    override fun onAnimationStart(animation: Animator) {
+                        layoutExpandedInfo.setLayerType(View.LAYER_TYPE_HARDWARE, null)
+                        layoutSettingsWrapper.setLayerType(View.LAYER_TYPE_HARDWARE, null)
+                        cardSettings.setLayerType(View.LAYER_TYPE_HARDWARE, null)
                     }
-                    addListener(object : AnimatorListenerAdapter() {
-                        override fun onAnimationEnd(animation: Animator) {
-                            layoutExpandedInfo.layoutParams.height = ViewGroup.LayoutParams.WRAP_CONTENT
-                            layoutSettingsWrapper.layoutParams.height = ViewGroup.LayoutParams.WRAP_CONTENT
-                            cardSettings.translationY = 0f
-                            cardSettings.alpha = 1f
-                        }
-                    })
-                    start()
-                }
-                isExpanded = true
-            } else {
-                // التحضير لعملية الطي
-                val startInfoHeight = layoutExpandedInfo.height
-                val startSettingsHeight = layoutSettingsWrapper.height
 
-                expandAnimator = ValueAnimator.ofFloat(1f, 0f).apply {
-                    duration = 350
-                    interpolator = DecelerateInterpolator()
-                    addUpdateListener { animation ->
-                        val fraction = animation.animatedValue as Float
-                        
-                        layoutExpandedInfo.layoutParams.height = (startInfoHeight * fraction).toInt()
-                        layoutExpandedInfo.requestLayout()
+                    override fun onAnimationEnd(animation: Animator) {
+                        layoutExpandedInfo.setLayerType(View.LAYER_TYPE_NONE, null)
+                        layoutSettingsWrapper.setLayerType(View.LAYER_TYPE_NONE, null)
+                        cardSettings.setLayerType(View.LAYER_TYPE_NONE, null)
 
-                        layoutSettingsWrapper.layoutParams.height = (startSettingsHeight * fraction).toInt()
-                        layoutSettingsWrapper.requestLayout()
-
-                        cardSettings.translationY = -startSettingsHeight * (1f - fraction)
-                        cardSettings.alpha = 0.5f + (0.5f * fraction)
-                    }
-                    addListener(object : AnimatorListenerAdapter() {
-                        override fun onAnimationEnd(animation: Animator) {
+                        // Finalize layout states based on the intended destination
+                        if (currentFraction == 0f) {
                             layoutExpandedInfo.visibility = View.GONE
                             layoutSettingsWrapper.visibility = View.GONE
+                        } else if (currentFraction == 1f) {
+                            layoutExpandedInfo.layoutParams.height = ViewGroup.LayoutParams.WRAP_CONTENT
+                            layoutSettingsWrapper.layoutParams.height = ViewGroup.LayoutParams.WRAP_CONTENT
                         }
-                    })
-                    start()
+                    }
+                })
+
+                addUpdateListener { animation ->
+                    currentFraction = animation.animatedValue as Float
+
+                    // Synchronize heights
+                    layoutExpandedInfo.layoutParams.height = (targetInfoHeight * currentFraction).toInt()
+                    layoutExpandedInfo.requestLayout()
+
+                    layoutSettingsWrapper.layoutParams.height = (targetSettingsHeight * currentFraction).toInt()
+                    layoutSettingsWrapper.requestLayout()
+
+                    // Parallax & Opacity effects for inner card
+                    cardSettings.translationY = -targetSettingsHeight * (1f - currentFraction)
+                    cardSettings.alpha = 0.3f + (0.7f * currentFraction)
                 }
-                isExpanded = false
+                start()
             }
         }
 
@@ -245,6 +264,8 @@ class MainActivity : AppCompatActivity() {
         swHideIcon.setOnCheckedChangeListener { buttonView, isChecked ->
             if (buttonView.isPressed) {
                 toggleLauncherIcon(isChecked)
+                // Force sync ViewModel state instantly to eliminate logic gaps on resume
+                viewModel.updateIconState(isChecked)
             }
         }
     }

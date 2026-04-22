@@ -22,7 +22,7 @@ class MainViewModel : ViewModel() {
         val frameworkName: String? = null,
         val frameworkVersion: String? = null,
         val logsEnabled: Boolean = false,
-        val isIconHidden: Boolean = false // الحالة الجديدة
+        val isIconHidden: Boolean = false
     )
 
     private val _uiState = MutableStateFlow(UiState())
@@ -30,10 +30,15 @@ class MainViewModel : ViewModel() {
 
     private var xposedService: XposedService? = null
 
-    // جلب حالة الأيقونة عند بدء التشغيل
+    // Read the current physical state of the launcher icon from the Android system
     fun checkLauncherIconState(context: Context) {
         val componentName = ComponentName(context, "com.umbra.hooks.MainActivityAlias")
         val isHidden = context.packageManager.getComponentEnabledSetting(componentName) == PackageManager.COMPONENT_ENABLED_STATE_DISABLED
+        _uiState.update { it.copy(isIconHidden = isHidden) }
+    }
+
+    // Force update the UI state immediately to prevent visual desync before the OS propagates the change
+    fun updateIconState(isHidden: Boolean) {
         _uiState.update { it.copy(isIconHidden = isHidden) }
     }
 
