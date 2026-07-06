@@ -3,6 +3,7 @@ package com.umbra.hooks
 import android.annotation.SuppressLint
 import android.util.Log
 import com.umbra.hooks.apps.GboardHook
+import com.umbra.hooks.apps.GrafikaHook
 import com.umbra.hooks.apps.PydroidHook
 import com.umbra.hooks.core.AppHook
 import com.umbra.hooks.utils.Constants
@@ -19,7 +20,8 @@ class MainHook : XposedModule() {
 
     private val hooks: List<AppHook> = listOf(
         GboardHook(),
-        PydroidHook()
+        PydroidHook(),
+        GrafikaHook()
     )
 
     override fun onPackageLoaded(param: XposedModuleInterface.PackageLoadedParam) {
