@@ -12,6 +12,9 @@
     <string name="status_enabled">ENABLED</string>
     <string name="desc_pydroid_features">Premium unlock, No-Ads &amp; Redirects.</string>
     
+    <string name="title_grafika">Grafika</string>
+    <string name="desc_grafika_features">Premium unlock &amp; UI cleanup.</string>
+    
     <string name="title_gboard">Gboard Clipboard</string>
     <string name="status_config">CONFIG</string>
     <string name="desc_gboard_features">Configure clipboard history limits.</string>
