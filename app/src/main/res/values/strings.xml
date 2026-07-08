@@ -5,7 +5,8 @@
     <string name="title_lsposed_module">LSPosed Module</string>
     <string name="title_module_activated">Module Activated</string>
     <string name="title_module_inactive">Module Not Active</string>
-    <string name="desc_module_running_format">Running in %1$s (%2$s)</string>
+    <!-- Updated format: Running in LSPosed 1.9.2 (7769) \n API 102 -->
+    <string name="desc_module_running_format">Running in %1$s %2$s (%3$s)\nAPI %4$s</string>
     <string name="desc_module_enable_reboot">Enable in LSPosed and reboot.</string>
     
     <string name="title_pydroid">Pydroid 3</string>

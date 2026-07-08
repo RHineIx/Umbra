@@ -265,7 +265,13 @@ class MainActivity : AppCompatActivity() {
         lifecycleScope.launch {
             repeatOnLifecycle(Lifecycle.State.STARTED) {
                 viewModel.uiState.collect { state ->
-                    updateUI(state.isServiceActive, state.frameworkName, state.frameworkVersion)
+                    updateUI(
+                        isActive = state.isServiceActive,
+                        fwName = state.frameworkName,
+                        fwVersion = state.frameworkVersion,
+                        fwVersionCode = state.frameworkVersionCode,
+                        fwApi = state.frameworkApi
+                    )
                     
                     if (swGlobalLogs.isChecked != state.logsEnabled) {
                         swGlobalLogs.isChecked = state.logsEnabled
@@ -294,7 +300,7 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    private fun updateUI(isActive: Boolean, fwName: String?, fwVersion: String?) {
+    private fun updateUI(isActive: Boolean, fwName: String?, fwVersion: String?, fwVersionCode: Long?, fwApi: Int?) {
         if (currentActiveState == isActive) return
         val isFirstLoad = currentActiveState == null
         currentActiveState = isActive
@@ -312,8 +318,15 @@ class MainActivity : AppCompatActivity() {
                             else getThemeColor(com.google.android.material.R.attr.colorOnErrorContainer)
 
         tvTitle.text = if (isActive) getString(R.string.title_module_activated) else getString(R.string.title_module_inactive)
-        tvDesc.text = if (isActive) getString(R.string.desc_module_running_format, fwName ?: "Unknown", fwVersion ?: "Unknown") 
+        
+        val name = fwName ?: "Unknown"
+        val version = fwVersion ?: "Unknown"
+        val vCode = if (fwVersionCode != null && fwVersionCode > 0) fwVersionCode.toString() else "Unknown"
+        val api = if (fwApi != null && fwApi > 0) fwApi.toString() else "Unknown"
+        
+        tvDesc.text = if (isActive) getString(R.string.desc_module_running_format, name, version, vCode, api) 
                       else getString(R.string.desc_module_enable_reboot)
+                      
         imgWatermark.isActivated = isActive
 
         if (isFirstLoad) {
