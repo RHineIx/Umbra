@@ -269,8 +269,7 @@ class MainActivity : AppCompatActivity() {
                         isActive = state.isServiceActive,
                         fwName = state.frameworkName,
                         fwVersion = state.frameworkVersion,
-                        fwVersionCode = state.frameworkVersionCode,
-                        fwApi = state.frameworkApi
+                        fwVersionCode = state.frameworkVersionCode
                     )
                     
                     if (swGlobalLogs.isChecked != state.logsEnabled) {
@@ -300,7 +299,7 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    private fun updateUI(isActive: Boolean, fwName: String?, fwVersion: String?, fwVersionCode: Long?, fwApi: Int?) {
+    private fun updateUI(isActive: Boolean, fwName: String?, fwVersion: String?, fwVersionCode: Long?) {
         if (currentActiveState == isActive) return
         val isFirstLoad = currentActiveState == null
         currentActiveState = isActive
@@ -319,12 +318,12 @@ class MainActivity : AppCompatActivity() {
 
         tvTitle.text = if (isActive) getString(R.string.title_module_activated) else getString(R.string.title_module_inactive)
         
+        // Format the advanced Framework description using safe fallbacks
         val name = fwName ?: "Unknown"
         val version = fwVersion ?: "Unknown"
         val vCode = if (fwVersionCode != null && fwVersionCode > 0) fwVersionCode.toString() else "Unknown"
-        val api = if (fwApi != null && fwApi > 0) fwApi.toString() else "Unknown"
         
-        tvDesc.text = if (isActive) getString(R.string.desc_module_running_format, name, version, vCode, api) 
+        tvDesc.text = if (isActive) getString(R.string.desc_module_running_format, name, version, vCode) 
                       else getString(R.string.desc_module_enable_reboot)
                       
         imgWatermark.isActivated = isActive
