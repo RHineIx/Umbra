@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+<androidx.core.widget.NestedScrollView xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
     xmlns:tools="http://schemas.android.com/tools"
     tools:ignore="Overdraw, ContentDescription, DisableBaselineAlignment, UselessParent"
@@ -264,158 +264,13 @@
             </FrameLayout>
         </LinearLayout>
 
-        <com.google.android.material.card.MaterialCardView
-            android:id="@+id/cardGboard"
+        <androidx.recyclerview.widget.RecyclerView
+            android:id="@+id/rvHooks"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginBottom="16dp"
-            android:clickable="true"
-            android:focusable="true"
-            android:foreground="?android:attr/selectableItemBackground"
-            app:cardBackgroundColor="?attr/colorSurface"
-            app:cardCornerRadius="20dp"
-            app:cardElevation="2dp">
-
-            <LinearLayout
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:orientation="vertical"
-                android:padding="24dp">
-
-                <LinearLayout
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:gravity="center_vertical"
-                    android:orientation="horizontal">
-
-                    <TextView
-                        android:layout_width="0dp"
-                        android:layout_height="wrap_content"
-                        android:layout_weight="1"
-                        android:text="@string/title_gboard"
-                        android:textAppearance="?attr/textAppearanceTitleLarge" />
-
-                    <TextView
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:background="@drawable/bg_chip"
-                        android:backgroundTint="?attr/colorPrimaryContainer"
-                        android:paddingHorizontal="14dp"
-                        android:paddingVertical="6dp"
-                        android:text="@string/status_config"
-                        android:textAppearance="?attr/textAppearanceLabelMedium"
-                        android:textColor="?attr/colorOnPrimaryContainer" />
-                </LinearLayout>
-
-                <TextView
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:layout_marginTop="8dp"
-                    android:text="@string/desc_gboard_features"
-                    android:textAppearance="?attr/textAppearanceBodyMedium"
-                    android:textColor="?attr/colorOnSurfaceVariant" />
-            </LinearLayout>
-        </com.google.android.material.card.MaterialCardView>
-
-        <com.google.android.material.card.MaterialCardView
-            android:id="@+id/cardPydroid"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginBottom="16dp"
-            app:cardBackgroundColor="?attr/colorSurface"
-            app:cardCornerRadius="20dp"
-            app:cardElevation="2dp">
-
-            <LinearLayout
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:orientation="vertical"
-                android:padding="24dp">
-
-                <LinearLayout
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:gravity="center_vertical"
-                    android:orientation="horizontal">
-
-                    <TextView
-                        android:layout_width="0dp"
-                        android:layout_height="wrap_content"
-                        android:layout_weight="1"
-                        android:text="@string/title_pydroid"
-                        android:textAppearance="?attr/textAppearanceTitleLarge" />
-
-                    <TextView
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:background="@drawable/bg_chip"
-                        android:backgroundTint="?attr/colorSecondaryContainer"
-                        android:paddingHorizontal="14dp"
-                        android:paddingVertical="6dp"
-                        android:text="@string/status_enabled"
-                        android:textAppearance="?attr/textAppearanceLabelMedium"
-                        android:textColor="?attr/colorOnSecondaryContainer" />
-                </LinearLayout>
-
-                <TextView
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:layout_marginTop="8dp"
-                    android:text="@string/desc_pydroid_features"
-                    android:textAppearance="?attr/textAppearanceBodyMedium"
-                    android:textColor="?attr/colorOnSurfaceVariant" />
-            </LinearLayout>
-        </com.google.android.material.card.MaterialCardView>
-
-        <com.google.android.material.card.MaterialCardView
-            android:id="@+id/cardGrafika"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginBottom="16dp"
-            app:cardBackgroundColor="?attr/colorSurface"
-            app:cardCornerRadius="20dp"
-            app:cardElevation="2dp">
-
-            <LinearLayout
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:orientation="vertical"
-                android:padding="24dp">
-
-                <LinearLayout
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:gravity="center_vertical"
-                    android:orientation="horizontal">
-
-                    <TextView
-                        android:layout_width="0dp"
-                        android:layout_height="wrap_content"
-                        android:layout_weight="1"
-                        android:text="@string/title_grafika"
-                        android:textAppearance="?attr/textAppearanceTitleLarge" />
-
-                    <TextView
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:background="@drawable/bg_chip"
-                        android:backgroundTint="?attr/colorSecondaryContainer"
-                        android:paddingHorizontal="14dp"
-                        android:paddingVertical="6dp"
-                        android:text="@string/status_enabled"
-                        android:textAppearance="?attr/textAppearanceLabelMedium"
-                        android:textColor="?attr/colorOnSecondaryContainer" />
-                </LinearLayout>
-
-                <TextView
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:layout_marginTop="8dp"
-                    android:text="@string/desc_grafika_features"
-                    android:textAppearance="?attr/textAppearanceBodyMedium"
-                    android:textColor="?attr/colorOnSurfaceVariant" />
-            </LinearLayout>
-        </com.google.android.material.card.MaterialCardView>
+            android:nestedScrollingEnabled="false"
+            android:clipToPadding="false"
+            tools:listitem="@layout/item_hook_card" />
 
     </LinearLayout>
-</ScrollView>
+</androidx.core.widget.NestedScrollView>
