@@ -102,7 +102,6 @@ class GrafikaHook : AppHook {
                 logError("[WARN] NativePremiumAccessManager not found", e)
             }
 
-            // Aggressively hook all boolean methods with 0 parameters in the collected classes
             var hookedMethods = 0
             for (clazz in targetClassesToHook) {
                 clazz.declaredMethods.forEach { m ->
@@ -116,7 +115,6 @@ class GrafikaHook : AppHook {
             }
             logInfo("[SUCCESS] Aggressive Premium state forced. Hooked $hookedMethods boolean methods across target classes.")
 
-            // Block Paywall Silently (intercept method 'h' and return null)
             billingHelperClass.declaredMethods.forEach { m ->
                 if (m.name == "h" && m.parameterTypes.size == 2 && m.parameterTypes[1] == String::class.java) {
                     xposedModule.hook(m).intercept { 
@@ -157,26 +155,31 @@ class GrafikaHook : AppHook {
                 }
                 result
             }
-            logInfo("[SUCCESS] Activity lifecycle observation active for StartActivity UI tweaks.")
+            logInfo("[SUCCESS] Activity lifecycle observation active for UI tweaks.")
         } catch (t: Throwable) {
             logError("[ERROR] Failed to attach to Activity lifecycle", t)
         }
     }
 
     private fun applyFunctionalUITweaks(activity: Activity) {
-        // 1. Hide "Connect with us" label securely via dynamic ID (Functional cleanup)
         val connectId = activity.resources.getIdentifier("label_connect_with_us", "id", activity.packageName)
         if (connectId != 0) {
-            activity.findViewById<View>(connectId)?.let { view ->
-                view.visibility = View.GONE
-                val parent = view.parent as? ViewGroup
-                if (parent != null && parent.javaClass.name.contains("HorizontalScrollView")) {
-                    parent.visibility = View.GONE
+            activity.findViewById<View>(connectId)?.let { labelView ->
+                labelView.visibility = View.GONE
+                
+                val parent = labelView.parent as? ViewGroup
+                if (parent != null) {
+                    for (i in 0 until parent.childCount) {
+                        val child = parent.getChildAt(i)
+                        if (child.javaClass.name.endsWith("HorizontalScrollView")) {
+                            child.visibility = View.GONE
+                        }
+                    }
+                    logInfo("[UI] Connect with us section and social buttons neutralized.")
                 }
             }
         }
 
-        // 2. Remove Account Tab securely via Reflection (Broken feature cleanup)
         try {
             val tabFields = activity.javaClass.declaredFields.filter { 
                 it.type.name == "com.google.android.material.tabs.TabLayout" 
