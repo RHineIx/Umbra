@@ -27,8 +27,12 @@ import androidx.core.view.WindowInsetsCompat
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.repeatOnLifecycle
+import androidx.recyclerview.widget.LinearLayoutManager
+import androidx.recyclerview.widget.RecyclerView
 import com.google.android.material.card.MaterialCardView
 import com.google.android.material.materialswitch.MaterialSwitch
+import com.umbra.hooks.ui.HookRegistry
+import com.umbra.hooks.ui.HooksAdapter
 import com.umbra.hooks.ui.MainViewModel
 import io.github.libxposed.service.XposedService
 import io.github.libxposed.service.XposedServiceHelper
@@ -158,20 +162,16 @@ class MainActivity : AppCompatActivity() {
         var targetSettingsHeight = 0
 
         cardStatus.setOnClickListener {
-            // Cancel existing animation, freezing currentFraction at the exact interaction point
             expandAnimator?.cancel()
 
-            // Prepare views for measurement if they are completely hidden
             if (layoutExpandedInfo.visibility == View.GONE) {
                 layoutExpandedInfo.visibility = View.INVISIBLE
                 layoutSettingsWrapper.visibility = View.INVISIBLE
             }
 
-            // Unbound Measurement Specs
             val widthSpec = View.MeasureSpec.makeMeasureSpec(cardStatus.width, View.MeasureSpec.EXACTLY)
             val heightSpec = View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED)
 
-            // Safely measure layoutExpandedInfo without causing UI flicker
             val lpInfo = layoutExpandedInfo.layoutParams
             val originalInfoHeight = lpInfo.height
             lpInfo.height = ViewGroup.LayoutParams.WRAP_CONTENT
@@ -181,7 +181,6 @@ class MainActivity : AppCompatActivity() {
             lpInfo.height = originalInfoHeight
             layoutExpandedInfo.layoutParams = lpInfo
 
-            // Safely measure layoutSettingsWrapper without causing UI flicker
             val lpSettings = layoutSettingsWrapper.layoutParams
             val originalSettingsHeight = lpSettings.height
             lpSettings.height = ViewGroup.LayoutParams.WRAP_CONTENT
@@ -191,7 +190,6 @@ class MainActivity : AppCompatActivity() {
             lpSettings.height = originalSettingsHeight
             layoutSettingsWrapper.layoutParams = lpSettings
 
-            // Make sure views are visible to draw the animation frames
             layoutExpandedInfo.visibility = View.VISIBLE
             layoutSettingsWrapper.visibility = View.VISIBLE
 
@@ -200,10 +198,7 @@ class MainActivity : AppCompatActivity() {
             isExpanded = !isExpanded
 
             expandAnimator = ValueAnimator.ofFloat(startFraction, targetFraction).apply {
-                // Adjust duration dynamically based on the remaining distance to travel. Max duration is 400ms.
                 duration = (400 * abs(targetFraction - startFraction)).toLong().coerceAtLeast(50L)
-
-                // Use a fluid Bezier curve that matches modern aesthetic (no bouncy glitches on spam clicks)
                 interpolator = PathInterpolator(0.3f, 0f, 0.1f, 1f)
 
                 addListener(object : AnimatorListenerAdapter() {
@@ -218,7 +213,6 @@ class MainActivity : AppCompatActivity() {
                         layoutSettingsWrapper.setLayerType(View.LAYER_TYPE_NONE, null)
                         cardSettings.setLayerType(View.LAYER_TYPE_NONE, null)
 
-                        // Finalize layout states based on the intended destination
                         if (currentFraction == 0f) {
                             layoutExpandedInfo.visibility = View.GONE
                             layoutSettingsWrapper.visibility = View.GONE
@@ -231,24 +225,17 @@ class MainActivity : AppCompatActivity() {
 
                 addUpdateListener { animation ->
                     currentFraction = animation.animatedValue as Float
-
-                    // Synchronize heights
                     layoutExpandedInfo.layoutParams.height = (targetInfoHeight * currentFraction).toInt()
                     layoutExpandedInfo.requestLayout()
 
                     layoutSettingsWrapper.layoutParams.height = (targetSettingsHeight * currentFraction).toInt()
                     layoutSettingsWrapper.requestLayout()
 
-                    // Parallax & Opacity effects for inner card
                     cardSettings.translationY = -targetSettingsHeight * (1f - currentFraction)
                     cardSettings.alpha = 0.3f + (0.7f * currentFraction)
                 }
                 start()
             }
-        }
-
-        findViewById<MaterialCardView>(R.id.cardGboard).setOnClickListener {
-            startActivity(Intent(this, GboardActivity::class.java))
         }
 
         findViewById<ImageView>(R.id.imgLsposed).setOnClickListener {
@@ -264,17 +251,26 @@ class MainActivity : AppCompatActivity() {
         swHideIcon.setOnCheckedChangeListener { buttonView, isChecked ->
             if (buttonView.isPressed) {
                 toggleLauncherIcon(isChecked)
-                // Force sync ViewModel state instantly to eliminate logic gaps on resume
                 viewModel.updateIconState(isChecked)
             }
         }
+
+        // Initialize dynamic RecyclerView for Hooks
+        val rvHooks = findViewById<RecyclerView>(R.id.rvHooks)
+        rvHooks.layoutManager = LinearLayoutManager(this)
+        rvHooks.adapter = HooksAdapter(HookRegistry.getHooks())
     }
 
     private fun observeState() {
         lifecycleScope.launch {
             repeatOnLifecycle(Lifecycle.State.STARTED) {
                 viewModel.uiState.collect { state ->
-                    updateUI(state.isServiceActive, state.frameworkName, state.frameworkVersion)
+                    updateUI(
+                        isActive = state.isServiceActive,
+                        fwName = state.frameworkName,
+                        fwVersion = state.frameworkVersion,
+                        fwVersionCode = state.frameworkVersionCode
+                    )
                     
                     if (swGlobalLogs.isChecked != state.logsEnabled) {
                         swGlobalLogs.isChecked = state.logsEnabled
@@ -303,7 +299,7 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    private fun updateUI(isActive: Boolean, fwName: String?, fwVersion: String?) {
+    private fun updateUI(isActive: Boolean, fwName: String?, fwVersion: String?, fwVersionCode: Long?) {
         if (currentActiveState == isActive) return
         val isFirstLoad = currentActiveState == null
         currentActiveState = isActive
@@ -321,8 +317,15 @@ class MainActivity : AppCompatActivity() {
                             else getThemeColor(com.google.android.material.R.attr.colorOnErrorContainer)
 
         tvTitle.text = if (isActive) getString(R.string.title_module_activated) else getString(R.string.title_module_inactive)
-        tvDesc.text = if (isActive) getString(R.string.desc_module_running_format, fwName ?: "Unknown", fwVersion ?: "Unknown") 
+        
+        // Format the advanced Framework description using safe fallbacks
+        val name = fwName ?: "Unknown"
+        val version = fwVersion ?: "Unknown"
+        val vCode = if (fwVersionCode != null && fwVersionCode > 0) fwVersionCode.toString() else "Unknown"
+        
+        tvDesc.text = if (isActive) getString(R.string.desc_module_running_format, name, version, vCode) 
                       else getString(R.string.desc_module_enable_reboot)
+                      
         imgWatermark.isActivated = isActive
 
         if (isFirstLoad) {

@@ -21,6 +21,7 @@ class MainViewModel : ViewModel() {
         val isServiceActive: Boolean = false,
         val frameworkName: String? = null,
         val frameworkVersion: String? = null,
+        val frameworkVersionCode: Long? = null,
         val logsEnabled: Boolean = false,
         val isIconHidden: Boolean = false
     )
@@ -50,7 +51,8 @@ class MainViewModel : ViewModel() {
                 it.copy(
                     isServiceActive = true,
                     frameworkName = service.frameworkName,
-                    frameworkVersion = service.frameworkVersion
+                    frameworkVersion = service.frameworkVersion,
+                    frameworkVersionCode = service.frameworkVersionCode
                 )
             }
 
