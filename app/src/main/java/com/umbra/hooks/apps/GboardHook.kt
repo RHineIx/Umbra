@@ -27,6 +27,7 @@ class GboardHook : AppHook {
         private const val KEY_METHOD_CONFIG = "method_read_config"
         private const val KEY_CLASS_ADAPTER = "class_clipboard_adapter"
         private const val KEY_CLASS_METRICS = "class_metrics_processor"
+        private const val KEY_METHOD_UI_CLEANUP = "method_ui_cleanup"
     }
 
     override val targetPackages = setOf("com.google.android.inputmethod.latin")
@@ -143,7 +144,7 @@ class GboardHook : AppHook {
 
         if (isSameVersion) {
             logInfo("[CACHE] Version matches ($versionCode). Applying cached offsets.")
-            applyDynamicHooks(classLoader, cachePrefs.getString(KEY_METHOD_CONFIG, null), cachePrefs.getString(KEY_CLASS_ADAPTER, null))
+            applyDynamicHooks(classLoader, cachePrefs.getString(KEY_METHOD_CONFIG, null), cachePrefs.getString(KEY_CLASS_ADAPTER, null), cachePrefs.getString(KEY_METHOD_UI_CLEANUP, null))
             applyPrivacyHooks(classLoader, cachePrefs.getString(KEY_CLASS_METRICS, null))
         } else {
             logInfo("[UPDATE] New version ($versionCode) detected. Initiating DexKit search...")
@@ -204,17 +205,28 @@ class GboardHook : AppHook {
                 val adapterClass = bridge.findClass { matcher { usingStrings("com/google/android/apps/inputmethod/libs/clipboard/ClipboardAdapter") } }.firstOrNull()?.name
                 val config = bridge.findMethod { matcher { usingStrings("Invalid flag:"); returnType("java.lang.Object") } }.firstOrNull()?.toDexMethod()?.serialize()
                 val metrics = bridge.findClass { matcher { usingStrings("UserMetrics", "Failed to process metrics") } }.firstOrNull()?.name
+                
+                // Dynamically target the UI limit guard method using its structural signature
+                val uiCleanup = if (adapterClass != null) bridge.findMethod { 
+                    matcher { 
+                        declaringClass(adapterClass)
+                        returnType("void")
+                        paramCount(0)
+                        usingNumbers(5)
+                    } 
+                }.firstOrNull()?.toDexMethod()?.serialize() else null
 
-                logInfo("[SEARCH] Results -> Adapter: ${adapterClass != null}, Config: ${config != null}, Metrics: ${metrics != null}")
+                logInfo("[SEARCH] Results -> Adapter: ${adapterClass != null}, Config: ${config != null}, UI Cleanup: ${uiCleanup != null}, Metrics: ${metrics != null}")
 
                 cachePrefs.edit()
                     .putInt(KEY_VERSION, versionCode)
                     .putString(KEY_METHOD_CONFIG, config)
                     .putString(KEY_CLASS_ADAPTER, adapterClass)
                     .putString(KEY_CLASS_METRICS, metrics)
+                    .putString(KEY_METHOD_UI_CLEANUP, uiCleanup)
                     .apply()
                 
-                applyDynamicHooks(classLoader, config, adapterClass)
+                applyDynamicHooks(classLoader, config, adapterClass, uiCleanup)
                 applyPrivacyHooks(classLoader, metrics)
             }
         } catch (t: Throwable) { 
@@ -222,7 +234,7 @@ class GboardHook : AppHook {
         }
     }
 
-    private fun applyDynamicHooks(classLoader: ClassLoader, config: String?, adapterClassName: String?) {
+    private fun applyDynamicHooks(classLoader: ClassLoader, config: String?, adapterClassName: String?, uiCleanup: String?) {
         if (!config.isNullOrBlank()) {
             try {
                 val dm = DexMethod(config)
@@ -247,13 +259,23 @@ class GboardHook : AppHook {
             }
         }
 
-        // Hook safety checks or internal methods inside ClipboardAdapter if needed
         if (!adapterClassName.isNullOrBlank()) {
             try {
-                val adapterCls = classLoader.loadClass(adapterClassName)
+                classLoader.loadClass(adapterClassName)
                 logInfo("[SUCCESS] Successfully resolved ClipboardAdapter class: $adapterClassName")
             } catch (e: Throwable) {
                 logError("[WARN] Failed to load resolved ClipboardAdapter class", e)
+            }
+        }
+
+        if (!uiCleanup.isNullOrBlank()) {
+            try {
+                val dm = DexMethod(uiCleanup)
+                val cleanupMethod = classLoader.loadClass(dm.className).getDeclaredMethod(dm.name)
+                xposedModule.hook(cleanupMethod).intercept { null }
+                logInfo("[SUCCESS] UI limit handler neutralized: ${dm.name}")
+            } catch (e: Throwable) {
+                logError("[WARN] Failed to hook UI limit handler.", e)
             }
         }
     }
