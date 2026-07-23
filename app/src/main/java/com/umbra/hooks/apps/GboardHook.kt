@@ -25,9 +25,8 @@ class GboardHook : AppHook {
         private const val PREFS_CACHE = "umbra_gboard_cache"
         private const val KEY_VERSION = "gboard_version"
         private const val KEY_METHOD_CONFIG = "method_read_config"
-        private const val KEY_METHOD_CLEANUP = "method_cleanup_list"
+        private const val KEY_CLASS_ADAPTER = "class_clipboard_adapter"
         private const val KEY_CLASS_METRICS = "class_metrics_processor"
-        private const val KEY_METHOD_RETENTION = "method_retention_logic"
     }
 
     override val targetPackages = setOf("com.google.android.inputmethod.latin")
@@ -144,7 +143,7 @@ class GboardHook : AppHook {
 
         if (isSameVersion) {
             logInfo("[CACHE] Version matches ($versionCode). Applying cached offsets.")
-            applyDynamicHooks(classLoader, cachePrefs.getString(KEY_METHOD_CONFIG, null), cachePrefs.getString(KEY_METHOD_CLEANUP, null), cachePrefs.getString(KEY_METHOD_RETENTION, null))
+            applyDynamicHooks(classLoader, cachePrefs.getString(KEY_METHOD_CONFIG, null), cachePrefs.getString(KEY_CLASS_ADAPTER, null))
             applyPrivacyHooks(classLoader, cachePrefs.getString(KEY_CLASS_METRICS, null))
         } else {
             logInfo("[UPDATE] New version ($versionCode) detected. Initiating DexKit search...")
@@ -201,17 +200,21 @@ class GboardHook : AppHook {
 
         try {
             DexKitBridge.create(context.applicationInfo.sourceDir).use { bridge ->
-                val adapterClass = bridge.findClass { matcher { usingStrings("com/google/android/apps/inputmethod/libs/clipboard/ClipboardAdapter") } }.firstOrNull()
-                val cleanup = if (adapterClass != null) bridge.findMethod { matcher { returnType("void"); usingNumbers(5) } }.firstOrNull { it.className == adapterClass.name }?.toDexMethod()?.serialize() else null
-                val retention = bridge.findMethod { matcher { usingNumbers(3600000L) } }.firstOrNull()?.toDexMethod()?.serialize()
+                // Search for ClipboardAdapter class using the verified string constant
+                val adapterClass = bridge.findClass { matcher { usingStrings("com/google/android/apps/inputmethod/libs/clipboard/ClipboardAdapter") } }.firstOrNull()?.name
                 val config = bridge.findMethod { matcher { usingStrings("Invalid flag:"); returnType("java.lang.Object") } }.firstOrNull()?.toDexMethod()?.serialize()
                 val metrics = bridge.findClass { matcher { usingStrings("UserMetrics", "Failed to process metrics") } }.firstOrNull()?.name
 
-                logInfo("[SEARCH] Results -> Config: ${config != null}, Cleanup: ${cleanup != null}, Retention: ${retention != null}, Metrics: ${metrics != null}")
+                logInfo("[SEARCH] Results -> Adapter: ${adapterClass != null}, Config: ${config != null}, Metrics: ${metrics != null}")
 
-                cachePrefs.edit().putInt(KEY_VERSION, versionCode).putString(KEY_METHOD_CONFIG, config).putString(KEY_METHOD_CLEANUP, cleanup).putString(KEY_CLASS_METRICS, metrics).putString(KEY_METHOD_RETENTION, retention).apply()
+                cachePrefs.edit()
+                    .putInt(KEY_VERSION, versionCode)
+                    .putString(KEY_METHOD_CONFIG, config)
+                    .putString(KEY_CLASS_ADAPTER, adapterClass)
+                    .putString(KEY_CLASS_METRICS, metrics)
+                    .apply()
                 
-                applyDynamicHooks(classLoader, config, cleanup, retention)
+                applyDynamicHooks(classLoader, config, adapterClass)
                 applyPrivacyHooks(classLoader, metrics)
             }
         } catch (t: Throwable) { 
@@ -219,7 +222,7 @@ class GboardHook : AppHook {
         }
     }
 
-    private fun applyDynamicHooks(classLoader: ClassLoader, config: String?, cleanup: String?, retention: String?) {
+    private fun applyDynamicHooks(classLoader: ClassLoader, config: String?, adapterClassName: String?) {
         if (!config.isNullOrBlank()) {
             try {
                 val dm = DexMethod(config)
@@ -244,23 +247,13 @@ class GboardHook : AppHook {
             }
         }
 
-        if (!cleanup.isNullOrBlank()) {
+        // Hook safety checks or internal methods inside ClipboardAdapter if needed
+        if (!adapterClassName.isNullOrBlank()) {
             try {
-                val dm = DexMethod(cleanup)
-                val cleanupMethod = classLoader.loadClass(dm.className).getDeclaredMethod(dm.name)
-                xposedModule.hook(cleanupMethod).intercept { null }
-            } catch (e: Throwable) { 
-                logInfo("[WARN] Local cleanup target not found.") 
-            }
-        }
-
-        if (!retention.isNullOrBlank()) {
-            try {
-                val dm = DexMethod(retention)
-                val retentionMethod = classLoader.loadClass(dm.className).getDeclaredMethod(dm.name)
-                xposedModule.hook(retentionMethod).intercept { null }
-            } catch (e: Throwable) { 
-                logInfo("[WARN] Internal retention target not found.") 
+                val adapterCls = classLoader.loadClass(adapterClassName)
+                logInfo("[SUCCESS] Successfully resolved ClipboardAdapter class: $adapterClassName")
+            } catch (e: Throwable) {
+                logError("[WARN] Failed to load resolved ClipboardAdapter class", e)
             }
         }
     }
