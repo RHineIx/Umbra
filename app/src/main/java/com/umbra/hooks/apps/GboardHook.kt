@@ -201,15 +201,13 @@ class GboardHook : AppHook {
 
         try {
             DexKitBridge.create(context.applicationInfo.sourceDir).use { bridge ->
-                // Search for ClipboardAdapter class using the verified string constant
                 val adapterClass = bridge.findClass { matcher { usingStrings("com/google/android/apps/inputmethod/libs/clipboard/ClipboardAdapter") } }.firstOrNull()?.name
                 val config = bridge.findMethod { matcher { usingStrings("Invalid flag:"); returnType("java.lang.Object") } }.firstOrNull()?.toDexMethod()?.serialize()
                 val metrics = bridge.findClass { matcher { usingStrings("UserMetrics", "Failed to process metrics") } }.firstOrNull()?.name
                 
-                // Dynamically target the UI limit guard method using its structural signature
                 val uiCleanup = if (adapterClass != null) bridge.findMethod { 
                     matcher { 
-                        declaringClass(adapterClass)
+                        className(adapterClass)
                         returnType("void")
                         paramCount(0)
                         usingNumbers(5)
