@@ -36,9 +36,5 @@
             </intent-filter>
         </activity-alias>
 
-        <activity
-            android:name=".GboardActivity"
-            android:exported="false" />
-
     </application>
 </manifest>

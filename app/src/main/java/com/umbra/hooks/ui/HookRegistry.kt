@@ -1,6 +1,5 @@
 package com.umbra.hooks.ui
 
-import com.umbra.hooks.GboardActivity
 import com.umbra.hooks.R
 
 data class HookItem(
@@ -13,12 +12,6 @@ data class HookItem(
 object HookRegistry {
     fun getHooks(): List<HookItem> {
         return listOf(
-            HookItem(
-                titleResId = R.string.title_gboard,
-                descriptionResId = R.string.desc_gboard_features,
-                isConfigurable = true,
-                actionIntentClass = GboardActivity::class.java
-            ),
             HookItem(
                 titleResId = R.string.title_pydroid,
                 descriptionResId = R.string.desc_pydroid_features,

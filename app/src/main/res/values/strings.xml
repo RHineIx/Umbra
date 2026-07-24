@@ -15,10 +15,6 @@
     <string name="title_grafika">Grafika</string>
     <string name="desc_grafika_features">Premium unlock &amp; UI cleanup.</string>
     
-    <string name="title_gboard">Gboard Clipboard</string>
-    <string name="status_config">CONFIG</string>
-    <string name="desc_gboard_features">Configure clipboard history limits.</string>
-    
     <string name="title_lsp_logs">LSP Logs</string>
     <string name="desc_enable_logs">Enable Module Logs</string>
 
@@ -29,12 +25,6 @@
     <string name="toast_root_denied">Root denied</string>
     <string name="toast_device_not_rooted">Device not rooted</string>
 
-    <string name="title_gboard_settings">Gboard Settings</string>
-    <string name="subtitle_clipboard_history">Clipboard &amp; History</string>
-    <string name="hint_clip_limit">Clipboard History Limit</string>
-    <string name="hint_retention_days">Retention (Days)</string>
-    <string name="action_save_config">Save Configuration</string>
-    
     <string name="toast_settings_saved">Settings Saved</string>
     <string name="toast_settings_failed">Failed to save settings</string>
     <string name="toast_service_disconnected">Xposed service disconnected</string>
