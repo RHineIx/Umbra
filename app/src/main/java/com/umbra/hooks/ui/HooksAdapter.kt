@@ -1,6 +1,5 @@
 package com.umbra.hooks.ui
 
-import android.content.Intent
 import android.content.res.ColorStateList
 import android.util.TypedValue
 import android.view.LayoutInflater
@@ -32,35 +31,17 @@ class HooksAdapter(private val hooks: List<HookItem>) : RecyclerView.Adapter<Hoo
         holder.tvHookTitle.setText(hook.titleResId)
         holder.tvHookDesc.setText(hook.descriptionResId)
 
-        if (hook.isConfigurable) {
-            holder.tvHookStatus.setText(R.string.status_config)
-            
-            // Dynamic primary color (Config)
-            theme.resolveAttribute(com.google.android.material.R.attr.colorPrimaryContainer, typedValue, true)
-            holder.tvHookStatus.backgroundTintList = ColorStateList.valueOf(typedValue.data)
-            
-            theme.resolveAttribute(com.google.android.material.R.attr.colorOnPrimaryContainer, typedValue, true)
-            holder.tvHookStatus.setTextColor(typedValue.data)
-
-            holder.itemView.isClickable = true
-            holder.itemView.setOnClickListener {
-                hook.actionIntentClass?.let { cls ->
-                    context.startActivity(Intent(context, cls))
-                }
-            }
-        } else {
-            holder.tvHookStatus.setText(R.string.status_enabled)
-            
-            // Dynamic secondary color (Enabled)
-            theme.resolveAttribute(com.google.android.material.R.attr.colorSecondaryContainer, typedValue, true)
-            holder.tvHookStatus.backgroundTintList = ColorStateList.valueOf(typedValue.data)
-            
-            theme.resolveAttribute(com.google.android.material.R.attr.colorOnSecondaryContainer, typedValue, true)
-            holder.tvHookStatus.setTextColor(typedValue.data)
-            
-            holder.itemView.isClickable = false
-            holder.itemView.setOnClickListener(null)
-        }
+        holder.tvHookStatus.setText(R.string.status_enabled)
+        
+        // Dynamic secondary color (Enabled)
+        theme.resolveAttribute(com.google.android.material.R.attr.colorSecondaryContainer, typedValue, true)
+        holder.tvHookStatus.backgroundTintList = ColorStateList.valueOf(typedValue.data)
+        
+        theme.resolveAttribute(com.google.android.material.R.attr.colorOnSecondaryContainer, typedValue, true)
+        holder.tvHookStatus.setTextColor(typedValue.data)
+        
+        holder.itemView.isClickable = false
+        holder.itemView.setOnClickListener(null)
     }
 
     override fun getItemCount() = hooks.size
