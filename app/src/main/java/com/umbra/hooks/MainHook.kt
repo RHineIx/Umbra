@@ -18,37 +18,37 @@ class MainHook : XposedModule() {
         private const val TAG = "UMBRA-MAIN"
     }
 
-    private val hooks: List<AppHook> = listOf(
-        PydroidHook(),
-        GrafikaHook(),
-        ShowlyHook()
+    // Lazy initialization mapping to conserve memory. Hooks are ONLY instantiated if the target app is launched.
+    private val hooksFactory: Map<String, () -> AppHook> = mapOf(
+        "ru.iiec.pydroid3" to { PydroidHook() },
+        "org.picquantmedia.grafika" to { GrafikaHook() },
+        "com.michaldrabik.showly2" to { ShowlyHook() }
     )
 
     override fun onPackageLoaded(param: XposedModuleInterface.PackageLoadedParam) {
         super.onPackageLoaded(param)
         val packageName = param.packageName
 
-        val logsEnabled = PrefsManager.getHookInt(this, Constants.KEY_GLOBAL_LOGS, 0) == 1
+        val factory = hooksFactory[packageName] ?: return // Exit early if the package is not supported
 
+        val logsEnabled = PrefsManager.getHookInt(this, Constants.KEY_GLOBAL_LOGS, 0) == 1
         if (logsEnabled) {
-            log(Log.INFO, TAG, "[DEBUG] Analyzing package load: $packageName")
+            log(Log.INFO, TAG, "[DEBUG] Analyzing supported package load: $packageName")
         }
 
-        for (hook in hooks) {
-            if (packageName in hook.targetPackages) {
-                try {
-                    if (logsEnabled) {
-                        log(Log.INFO, TAG, "[MATCH] Target package found: $packageName. Executing ${hook.javaClass.simpleName}")
-                    }
-                    hook.handleLoadPackage(this, param)
-                    if (logsEnabled) {
-                        log(Log.INFO, TAG, "[SUCCESS] ${hook.javaClass.simpleName} executed successfully for $packageName")
-                    }
-                } catch (t: Throwable) {
-                    if (logsEnabled) {
-                        log(Log.ERROR, TAG, "[FATAL] Exception occurred in ${hook.javaClass.simpleName}", t)
-                    }
-                }
+        try {
+            val hook = factory()
+            if (logsEnabled) {
+                log(Log.INFO, TAG, "[MATCH] Executing ${hook.javaClass.simpleName} for $packageName")
+            }
+            hook.handleLoadPackage(this, param)
+            
+            if (logsEnabled) {
+                log(Log.INFO, TAG, "[SUCCESS] ${hook.javaClass.simpleName} attached successfully.")
+            }
+        } catch (t: Throwable) {
+            if (logsEnabled) {
+                log(Log.ERROR, TAG, "[FATAL] Exception occurred during module execution", t)
             }
         }
     }
