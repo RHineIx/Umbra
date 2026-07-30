@@ -15,6 +15,9 @@
     <string name="title_grafika">Grafika</string>
     <string name="desc_grafika_features">Premium unlock &amp; UI cleanup.</string>
     
+    <string name="title_showly">Showly</string>
+    <string name="desc_showly_features">Premium unlock &amp; Sync bypass.</string>
+    
     <string name="title_lsp_logs">LSP Logs</string>
     <string name="desc_enable_logs">Enable Module Logs</string>
 

@@ -17,6 +17,10 @@ object HookRegistry {
             HookItem(
                 titleResId = R.string.title_grafika,
                 descriptionResId = R.string.desc_grafika_features
+            ),
+            HookItem(
+                titleResId = R.string.title_showly,
+                descriptionResId = R.string.desc_showly_features
             )
         )
     }
