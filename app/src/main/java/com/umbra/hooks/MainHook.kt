@@ -18,18 +18,21 @@ class MainHook : XposedModule() {
         private const val TAG = "UMBRA-MAIN"
     }
 
-    // Lazy initialization mapping to conserve memory. Hooks are ONLY instantiated if the target app is launched.
+    // Lazy initialization mapping
     private val hooksFactory: Map<String, () -> AppHook> = mapOf(
         "ru.iiec.pydroid3" to { PydroidHook() },
         "org.picquantmedia.grafika" to { GrafikaHook() },
         "com.michaldrabik.showly2" to { ShowlyHook() }
     )
 
+    // API 102: Tracking active module instances for hot-reload scenarios
+    private val activeHooks = mutableListOf<AppHook>()
+
     override fun onPackageLoaded(param: XposedModuleInterface.PackageLoadedParam) {
         super.onPackageLoaded(param)
         val packageName = param.packageName
 
-        val factory = hooksFactory[packageName] ?: return // Exit early if the package is not supported
+        val factory = hooksFactory[packageName] ?: return
 
         val logsEnabled = PrefsManager.getHookInt(this, Constants.KEY_GLOBAL_LOGS, 0) == 1
         if (logsEnabled) {
@@ -38,9 +41,12 @@ class MainHook : XposedModule() {
 
         try {
             val hook = factory()
+            activeHooks.add(hook)
+            
             if (logsEnabled) {
                 log(Log.INFO, TAG, "[MATCH] Executing ${hook.javaClass.simpleName} for $packageName")
             }
+            
             hook.handleLoadPackage(this, param)
             
             if (logsEnabled) {

@@ -8,6 +8,7 @@ import android.util.Log
 import android.widget.Toast
 import com.umbra.hooks.utils.Constants
 import com.umbra.hooks.utils.PrefsManager
+import io.github.libxposed.api.XposedInterface
 import io.github.libxposed.api.XposedModule
 import io.github.libxposed.api.XposedModuleInterface
 import org.luckypray.dexkit.DexKitBridge
@@ -17,9 +18,8 @@ import java.util.concurrent.ThreadPoolExecutor
 import java.util.concurrent.TimeUnit
 
 /**
- * Core Abstract Hook Class implementing DRY principles.
- * Handles lifecycle attachments, background DexKit initialization, safe native library loading,
- * caching logic, and thread management across all dynamically analyzed modules.
+ * Core Abstract Hook Class optimized for LibXposed API 102.
+ * Includes thread management, caching, and atomic hook detach mechanisms.
  */
 abstract class BaseDynamicHook : AppHook {
 
@@ -31,8 +31,10 @@ abstract class BaseDynamicHook : AppHook {
     protected lateinit var xposedModule: XposedModule
     protected lateinit var targetClassLoader: ClassLoader
 
+    // API 102: Track hooks via HookHandle to safely detach them later (Hot Reload Support)
+    private val activeHookHandles = mutableListOf<XposedInterface.HookHandle>()
+
     companion object {
-        // Shared executor across all hooks to conserve system resources and prevent thread leaks
         val sharedExecutor: ExecutorService by lazy {
             ThreadPoolExecutor(
                 0, 1,
@@ -53,6 +55,25 @@ abstract class BaseDynamicHook : AppHook {
         }
     }
 
+    /**
+     * API 102: Registers a hook handle for safe teardown
+     */
+    protected fun registerHook(handle: XposedInterface.HookHandle?) {
+        handle?.let { activeHookHandles.add(it) }
+    }
+
+    override fun detachAll() {
+        if (activeHookHandles.isNotEmpty()) {
+            logInfo("[TEARDOWN] Detaching ${activeHookHandles.size} active hooks safely.")
+            activeHookHandles.forEach { handle ->
+                try {
+                    handle.unhook() // Unhooks atomically in API 102
+                } catch (_: Throwable) {}
+            }
+            activeHookHandles.clear()
+        }
+    }
+
     override fun handleLoadPackage(module: XposedModule, param: XposedModuleInterface.PackageLoadedParam) {
         this.xposedModule = module
         this.targetClassLoader = param.defaultClassLoader
@@ -63,7 +84,7 @@ abstract class BaseDynamicHook : AppHook {
             val appClass = targetClassLoader.loadClass("android.app.Application")
             val attachMethod = appClass.getDeclaredMethod("attach", Context::class.java)
 
-            module.hook(attachMethod).intercept { chain ->
+            val attachHookHandle = module.hook(attachMethod).intercept { chain ->
                 val result = chain.proceed()
                 try {
                     val context = chain.args[0] as Context
@@ -74,17 +95,15 @@ abstract class BaseDynamicHook : AppHook {
                 }
                 return@intercept result
             }
+            registerHook(attachHookHandle)
+            
         } catch (t: Throwable) {
             logError("[ERROR] Failed to hook Application.attach", t)
         }
 
-        // Allow subclasses to perform non-dynamic hooking (like early UI tweaks) directly on load
         onPackageLoaded(targetClassLoader)
     }
 
-    /**
-     * Optional override for subclasses to perform immediate hooks when the package loads.
-     */
     open fun onPackageLoaded(classLoader: ClassLoader) {}
 
     private fun onAppAttached(context: Context, classLoader: ClassLoader) {
@@ -153,7 +172,6 @@ abstract class BaseDynamicHook : AppHook {
             DexKitBridge.create(context.applicationInfo.sourceDir).use { bridge ->
                 performSearchSynchronous(bridge, cachePrefs)
             }
-            // Atomically update the version cache ONLY if the search succeeds
             cachePrefs.edit().putInt("app_version", versionCode).apply()
         } catch (t: Throwable) {
             logError("[ERROR] DexKit parsing engine encountered an exception", t)

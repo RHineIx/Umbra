@@ -6,8 +6,8 @@ appcompat = "1.7.1"
 material = "1.13.0"
 constraintlayout = "2.2.1"
 dexkit = "2.1.0"
-libxposed-api = "101.0.1"
-libxposed-service = "101.0.0"
+libxposed-api = "102.0.0"
+libxposed-service = "102.0.0"
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }

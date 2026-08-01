@@ -27,7 +27,6 @@ class ShowlyHook : BaseDynamicHook() {
         val premiumTargets = mutableSetOf<String>()
         val syncTargets = mutableSetOf<String>()
 
-        // 1. Locate the local premium verification class
         bridge.findClass {
             matcher {
                 usingStrings("KEY_PREMIUM")
@@ -37,7 +36,6 @@ class ShowlyHook : BaseDynamicHook() {
             logInfo("[SEARCH] Found Premium Target: ${c.name}")
         }
 
-        // 2. Locate the background sync method preventing the restart loop
         bridge.findMethod {
             matcher {
                 name("onStart")
@@ -53,7 +51,6 @@ class ShowlyHook : BaseDynamicHook() {
             .putStringSet(KEY_SYNC_TARGETS, syncTargets)
             .apply()
 
-        // Apply immediately after parsing using the correctly scoped ClassLoader
         applyHooks(targetClassLoader, cachePrefs)
     }
 
@@ -61,7 +58,6 @@ class ShowlyHook : BaseDynamicHook() {
         val premiumClasses = cachePrefs.getStringSet(KEY_PREMIUM_TARGETS, emptySet()) ?: emptySet()
         val syncTargets = cachePrefs.getStringSet(KEY_SYNC_TARGETS, emptySet()) ?: emptySet()
 
-        // Apply Premium Local Bypass
         var hookedPremiumMethods = 0
         for (className in premiumClasses) {
             try {
@@ -69,7 +65,9 @@ class ShowlyHook : BaseDynamicHook() {
                 clazz.declaredMethods.forEach { m ->
                     if (m.returnType == Boolean::class.javaPrimitiveType && m.parameterTypes.isEmpty() && !Modifier.isAbstract(m.modifiers)) {
                         try {
-                            xposedModule.hook(m).intercept { true }
+                            // Register Hook for API 102 Detach
+                            val hookHandle = xposedModule.hook(m).intercept { true }
+                            registerHook(hookHandle)
                             hookedPremiumMethods++
                         } catch (_: Exception) {}
                     }
@@ -80,7 +78,6 @@ class ShowlyHook : BaseDynamicHook() {
         }
         logInfo("[SUCCESS] Aggressive Premium state forced. Hooked $hookedPremiumMethods methods.")
 
-        // Apply Lifecycle Sync Bypass
         for (target in syncTargets) {
             val parts = target.split("|")
             if (parts.size == 2) {
@@ -88,8 +85,9 @@ class ShowlyHook : BaseDynamicHook() {
                     val clazz = classLoader.loadClass(parts[0])
                     clazz.declaredMethods.forEach { m ->
                         if (m.name == parts[1]) {
-                            // Intercept and return void (null) to drop the server call
-                            xposedModule.hook(m).intercept { null }
+                            // Register Hook for API 102 Detach
+                            val hookHandle = xposedModule.hook(m).intercept { null }
+                            registerHook(hookHandle)
                             logInfo("[SUCCESS] Lifecycle Sync execution neutralized for ${parts[0]}")
                         }
                     }

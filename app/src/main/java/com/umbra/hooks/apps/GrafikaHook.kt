@@ -80,7 +80,8 @@ class GrafikaHook : BaseDynamicHook() {
                 clazz.declaredMethods.forEach { m ->
                     if (m.returnType == Boolean::class.javaPrimitiveType && m.parameterTypes.isEmpty()) {
                         try {
-                            xposedModule.hook(m).intercept { true }
+                            val hookHandle = xposedModule.hook(m).intercept { true }
+                            registerHook(hookHandle)
                             hookedPremiumMethods++
                         } catch (_: Exception) {}
                     }
@@ -98,7 +99,8 @@ class GrafikaHook : BaseDynamicHook() {
                 if (m.name.contains("checkLicense", ignoreCase = true) ||
                     m.name.contains("Paywall", ignoreCase = true) ||
                     m.name.contains("ErrorDialog", ignoreCase = true)) {
-                    xposedModule.hook(m).intercept { null }
+                    val hookHandle = xposedModule.hook(m).intercept { null }
+                    registerHook(hookHandle)
                 }
             }
             logInfo("[SUCCESS] Pairip integrity checks neutralized.")
@@ -114,7 +116,7 @@ class GrafikaHook : BaseDynamicHook() {
     private fun hookActivityLifecycle(classLoader: ClassLoader) {
         try {
             val activityClass = classLoader.loadClass("android.app.Activity")
-            xposedModule.hook(activityClass.getDeclaredMethod("onResume")).intercept { chain ->
+            val hookHandle = xposedModule.hook(activityClass.getDeclaredMethod("onResume")).intercept { chain ->
                 val result = chain.proceed()
                 val activity = chain.thisObject as? Activity
 
@@ -140,6 +142,7 @@ class GrafikaHook : BaseDynamicHook() {
                 }
                 result
             }
+            registerHook(hookHandle)
             logInfo("[SUCCESS] Activity lifecycle observation active with micro-optimization.")
         } catch (t: Throwable) {
             logError("[ERROR] Failed to attach to Activity lifecycle", t)

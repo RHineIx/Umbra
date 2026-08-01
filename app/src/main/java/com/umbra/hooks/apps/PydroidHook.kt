@@ -59,13 +59,15 @@ class PydroidHook : BaseDynamicHook() {
     private fun hookMainControllerClass(classLoader: ClassLoader, className: String, navMethodName: String) {
         try {
             val clazz = classLoader.loadClass(className)
-            xposedModule.hook(clazz.getDeclaredMethod(navMethodName, classLoader.loadClass(NAV_VIEW_CLASS))).intercept { null }
+            val hookHandle = xposedModule.hook(clazz.getDeclaredMethod(navMethodName, classLoader.loadClass(NAV_VIEW_CLASS))).intercept { null }
+            registerHook(hookHandle)
             
             var boolMethodHooks = 0
             clazz.declaredMethods.forEach { m ->
                 if (m.parameterTypes.isEmpty() && m.returnType == Boolean::class.javaPrimitiveType && !Modifier.isAbstract(m.modifiers)) {
                     try { 
-                        xposedModule.hook(m).intercept { true } 
+                        val boolHandle = xposedModule.hook(m).intercept { true } 
+                        registerHook(boolHandle)
                         boolMethodHooks++
                     } catch (_: Throwable) {}
                 }
@@ -84,7 +86,7 @@ class PydroidHook : BaseDynamicHook() {
         try {
             val activityClass = classLoader.loadClass("android.app.Activity")
 
-            xposedModule.hook(activityClass.getDeclaredMethod("onResume")).intercept { chain ->
+            val hookHandle = xposedModule.hook(activityClass.getDeclaredMethod("onResume")).intercept { chain ->
                 val r = chain.proceed()
                 val activity = chain.thisObject as? Activity
                 
@@ -112,6 +114,7 @@ class PydroidHook : BaseDynamicHook() {
                 }
                 r
             }
+            registerHook(hookHandle)
             logInfo("[SUCCESS] Activity lifecycle observation active.")
         } catch (t: Throwable) { 
             logError("[ERROR] Failed to attach to Activity lifecycle", t) 
