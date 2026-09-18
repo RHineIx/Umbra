@@ -12,6 +12,7 @@ import io.github.libxposed.api.XposedInterface
 import io.github.libxposed.api.XposedModule
 import io.github.libxposed.api.XposedModuleInterface
 import org.luckypray.dexkit.DexKitBridge
+import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.LinkedBlockingQueue
 import java.util.concurrent.ThreadPoolExecutor
@@ -22,7 +23,6 @@ import java.util.concurrent.TimeUnit
  * Includes thread management, caching, and atomic hook detach mechanisms.
  */
 abstract class BaseDynamicHook : AppHook {
-
     protected abstract val tag: String
     protected abstract val prefsCacheName: String
     protected abstract val successToastMessage: String
@@ -31,15 +31,17 @@ abstract class BaseDynamicHook : AppHook {
     protected lateinit var xposedModule: XposedModule
     protected lateinit var targetClassLoader: ClassLoader
 
-    // API 102: Track hooks via HookHandle to safely detach them later (Hot Reload Support)
-    private val activeHookHandles = mutableListOf<XposedInterface.HookHandle>()
+    // API 102: Track hooks via HookHandle to safely detach them later (Thread-Safe Hot Reload Support)
+    private val activeHookHandles = CopyOnWriteArrayList<XposedInterface.HookHandle>()
 
     companion object {
         val sharedExecutor: ExecutorService by lazy {
             ThreadPoolExecutor(
-                0, 1,
-                60L, TimeUnit.SECONDS,
-                LinkedBlockingQueue<Runnable>()
+                0,
+                1,
+                60L,
+                TimeUnit.SECONDS,
+                LinkedBlockingQueue<Runnable>(),
             )
         }
     }
@@ -48,10 +50,16 @@ abstract class BaseDynamicHook : AppHook {
         if (logsEnabled) xposedModule.log(Log.INFO, tag, message)
     }
 
-    protected fun logError(message: String, t: Throwable? = null) {
+    protected fun logError(
+        message: String,
+        t: Throwable? = null,
+    ) {
         if (logsEnabled) {
-            if (t != null) xposedModule.log(Log.ERROR, tag, message, t)
-            else xposedModule.log(Log.ERROR, tag, message)
+            if (t != null) {
+                xposedModule.log(Log.ERROR, tag, message, t)
+            } else {
+                xposedModule.log(Log.ERROR, tag, message)
+            }
         }
     }
 
@@ -68,35 +76,39 @@ abstract class BaseDynamicHook : AppHook {
             activeHookHandles.forEach { handle ->
                 try {
                     handle.unhook() // Unhooks atomically in API 102
-                } catch (_: Throwable) {}
+                } catch (_: Throwable) {
+                }
             }
             activeHookHandles.clear()
         }
     }
 
-    override fun handleLoadPackage(module: XposedModule, param: XposedModuleInterface.PackageLoadedParam) {
+    override fun handleLoadPackage(
+        module: XposedModule,
+        param: XposedModuleInterface.PackageLoadedParam,
+    ) {
         this.xposedModule = module
         this.targetClassLoader = param.defaultClassLoader
-        
+
         logsEnabled = PrefsManager.getHookInt(xposedModule, Constants.KEY_GLOBAL_LOGS, 0) == 1
 
         try {
             val appClass = targetClassLoader.loadClass("android.app.Application")
             val attachMethod = appClass.getDeclaredMethod("attach", Context::class.java)
 
-            val attachHookHandle = module.hook(attachMethod).intercept { chain ->
-                val result = chain.proceed()
-                try {
-                    val context = chain.args[0] as Context
-                    logInfo("[INFO] Application.attach intercepted. Initializing Dynamic Engine...")
-                    onAppAttached(context, targetClassLoader)
-                } catch (t: Throwable) {
-                    logError("[FATAL] Error occurred inside attach execution block", t)
+            val attachHookHandle =
+                module.hook(attachMethod).intercept { chain ->
+                    val result = chain.proceed()
+                    try {
+                        val context = chain.args[0] as Context
+                        logInfo("[INFO] Application.attach intercepted. Initializing Dynamic Engine...")
+                        onAppAttached(context, targetClassLoader)
+                    } catch (t: Throwable) {
+                        logError("[FATAL] Error occurred inside attach execution block", t)
+                    }
+                    return@intercept result
                 }
-                return@intercept result
-            }
             registerHook(attachHookHandle)
-            
         } catch (t: Throwable) {
             logError("[ERROR] Failed to hook Application.attach", t)
         }
@@ -106,9 +118,17 @@ abstract class BaseDynamicHook : AppHook {
 
     open fun onPackageLoaded(classLoader: ClassLoader) {}
 
-    private fun onAppAttached(context: Context, classLoader: ClassLoader) {
+    private fun onAppAttached(
+        context: Context,
+        classLoader: ClassLoader,
+    ) {
         val cachePrefs = context.getSharedPreferences(prefsCacheName, Context.MODE_PRIVATE)
-        val versionCode = try { context.packageManager.getPackageInfo(context.packageName, 0).versionCode } catch (_: Exception) { -1 }
+        val versionCode =
+            try {
+                context.packageManager.getPackageInfo(context.packageName, 0).versionCode
+            } catch (_: Exception) {
+                -1
+            }
 
         val isSameVersion = (versionCode != -1 && versionCode == cachePrefs.getInt("app_version", -1))
 
@@ -142,9 +162,10 @@ abstract class BaseDynamicHook : AppHook {
         } catch (e: UnsatisfiedLinkError) {
             logInfo("[WARN] Native load failed. Invoking absolute path extraction.")
             try {
-                val appInfoMethod = xposedModule.javaClass.methods.firstOrNull {
-                    it.name == "getApplicationInfo" || it.name == "getModuleApplicationInfo"
-                }
+                val appInfoMethod =
+                    xposedModule.javaClass.methods.firstOrNull {
+                        it.name == "getApplicationInfo" || it.name == "getModuleApplicationInfo"
+                    }
                 val appInfo = appInfoMethod?.invoke(xposedModule) as? android.content.pm.ApplicationInfo
 
                 if (appInfo != null) {
@@ -161,7 +182,11 @@ abstract class BaseDynamicHook : AppHook {
         }
     }
 
-    private fun performSearchAndCache(context: Context, versionCode: Int, cachePrefs: SharedPreferences) {
+    private fun performSearchAndCache(
+        context: Context,
+        versionCode: Int,
+        cachePrefs: SharedPreferences,
+    ) {
         try {
             loadDexKitSafely()
         } catch (e: Throwable) {
@@ -179,6 +204,14 @@ abstract class BaseDynamicHook : AppHook {
     }
 
     protected abstract fun hasValidCache(cachePrefs: SharedPreferences): Boolean
-    protected abstract fun performSearchSynchronous(bridge: DexKitBridge, cachePrefs: SharedPreferences)
-    protected abstract fun applyHooks(classLoader: ClassLoader, cachePrefs: SharedPreferences)
+
+    protected abstract fun performSearchSynchronous(
+        bridge: DexKitBridge,
+        cachePrefs: SharedPreferences,
+    )
+
+    protected abstract fun applyHooks(
+        classLoader: ClassLoader,
+        cachePrefs: SharedPreferences,
+    )
 }

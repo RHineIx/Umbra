@@ -26,3 +26,6 @@ captures/
 *.apk
 *.aab
 EOF
+.clangd
+.clang-tidy
+app/keystore.properties
