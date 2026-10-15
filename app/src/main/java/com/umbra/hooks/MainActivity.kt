@@ -11,12 +11,15 @@ import android.content.pm.PackageManager
 import android.content.res.ColorStateList
 import android.net.Uri
 import android.os.Bundle
+import android.text.InputType
 import android.util.TypedValue
 import android.view.View
 import android.view.ViewGroup
 import android.view.animation.PathInterpolator
 import android.widget.FrameLayout
+import android.widget.EditText
 import android.widget.ImageView
+import android.widget.LinearLayout
 import android.widget.TextView
 import android.widget.Toast
 import androidx.activity.enableEdgeToEdge
@@ -29,11 +32,15 @@ import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.repeatOnLifecycle
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
+import androidx.appcompat.app.AlertDialog
 import com.google.android.material.card.MaterialCardView
+import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import com.google.android.material.materialswitch.MaterialSwitch
 import com.umbra.hooks.ui.HookRegistry
 import com.umbra.hooks.ui.HooksAdapter
 import com.umbra.hooks.ui.MainViewModel
+import com.umbra.hooks.utils.Constants
+import com.umbra.hooks.utils.PrefsManager
 import io.github.libxposed.service.XposedService
 import io.github.libxposed.service.XposedServiceHelper
 import kotlinx.coroutines.Dispatchers
@@ -258,7 +265,88 @@ class MainActivity : AppCompatActivity() {
         // Initialize dynamic RecyclerView for Hooks
         val rvHooks = findViewById<RecyclerView>(R.id.rvHooks)
         rvHooks.layoutManager = LinearLayoutManager(this)
-        rvHooks.adapter = HooksAdapter(HookRegistry.getHooks())
+        rvHooks.adapter = HooksAdapter(HookRegistry.getHooks()) { hook ->
+            if (hook.settingsAvailable) showGboardSettingsDialog()
+        }
+    }
+
+    private fun showGboardSettingsDialog() {
+        val service = xposedService
+        if (service == null) {
+            Toast.makeText(this, R.string.toast_service_disconnected, Toast.LENGTH_SHORT).show()
+            return
+        }
+
+        val clipboardLimitInput = EditText(this).apply {
+            inputType = InputType.TYPE_CLASS_NUMBER
+            setSingleLine(true)
+            setText(
+                PrefsManager.getInt(
+                    service,
+                    Constants.KEY_GBOARD_CLIPBOARD_LIMIT,
+                    Constants.DEFAULT_GBOARD_CLIPBOARD_LIMIT
+                ).toString()
+            )
+        }
+        val retentionDaysInput = EditText(this).apply {
+            inputType = InputType.TYPE_CLASS_NUMBER
+            setSingleLine(true)
+            setText(
+                PrefsManager.getInt(
+                    service,
+                    Constants.KEY_GBOARD_CLIPBOARD_RETENTION_DAYS,
+                    Constants.DEFAULT_GBOARD_CLIPBOARD_RETENTION_DAYS
+                ).toString()
+            )
+        }
+
+        val padding = (24 * resources.displayMetrics.density).toInt()
+        val content = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(padding, padding / 2, padding, 0)
+        }
+        content.addView(TextView(this).apply {
+            text = getString(R.string.gboard_clipboard_limit_label)
+            textSize = 14f
+        })
+        content.addView(clipboardLimitInput)
+        content.addView(TextView(this).apply {
+            text = getString(R.string.gboard_retention_days_label)
+            textSize = 14f
+            setPadding(0, padding / 3, 0, 0)
+        })
+        content.addView(retentionDaysInput)
+
+        val dialog = MaterialAlertDialogBuilder(this)
+            .setTitle(R.string.gboard_settings_title)
+            .setView(content)
+            .setNegativeButton(android.R.string.cancel, null)
+            .setPositiveButton(R.string.action_save, null)
+            .create()
+
+        dialog.setOnShowListener {
+            dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener {
+                val clipboardLimit = clipboardLimitInput.text.toString().toIntOrNull()
+                val retentionDays = retentionDaysInput.text.toString().toIntOrNull()
+
+                if (clipboardLimit == null || clipboardLimit !in 1..1000) {
+                    clipboardLimitInput.error = getString(R.string.gboard_limit_invalid)
+                    return@setOnClickListener
+                }
+                if (retentionDays == null || retentionDays !in 1..3650) {
+                    retentionDaysInput.error = getString(R.string.gboard_days_invalid)
+                    return@setOnClickListener
+                }
+
+                if (PrefsManager.putGboardClipboardSettings(service, clipboardLimit, retentionDays)) {
+                    Toast.makeText(this, R.string.toast_gboard_saved_restart, Toast.LENGTH_LONG).show()
+                    dialog.dismiss()
+                } else {
+                    Toast.makeText(this, R.string.toast_settings_failed, Toast.LENGTH_SHORT).show()
+                }
+            }
+        }
+        dialog.show()
     }
 
     private fun observeState() {

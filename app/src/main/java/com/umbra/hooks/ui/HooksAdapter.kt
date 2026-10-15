@@ -9,7 +9,10 @@ import android.widget.TextView
 import androidx.recyclerview.widget.RecyclerView
 import com.umbra.hooks.R
 
-class HooksAdapter(private val hooks: List<HookItem>) : RecyclerView.Adapter<HooksAdapter.HookViewHolder>() {
+class HooksAdapter(
+    private val hooks: List<HookItem>,
+    private val onSettingsClick: (HookItem) -> Unit = {}
+) : RecyclerView.Adapter<HooksAdapter.HookViewHolder>() {
 
     class HookViewHolder(view: View) : RecyclerView.ViewHolder(view) {
         val tvHookTitle: TextView = view.findViewById(R.id.tvHookTitle)
@@ -40,8 +43,11 @@ class HooksAdapter(private val hooks: List<HookItem>) : RecyclerView.Adapter<Hoo
         theme.resolveAttribute(com.google.android.material.R.attr.colorOnSecondaryContainer, typedValue, true)
         holder.tvHookStatus.setTextColor(typedValue.data)
         
-        holder.itemView.isClickable = false
-        holder.itemView.setOnClickListener(null)
+        holder.itemView.isClickable = hook.settingsAvailable
+        holder.itemView.isFocusable = hook.settingsAvailable
+        holder.itemView.setOnClickListener {
+            if (hook.settingsAvailable) onSettingsClick(hook)
+        }
     }
 
     override fun getItemCount() = hooks.size

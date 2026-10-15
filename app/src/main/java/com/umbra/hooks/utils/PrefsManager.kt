@@ -31,6 +31,24 @@ object PrefsManager {
         }
     }
 
+    fun putGboardClipboardSettings(
+        service: XposedService?,
+        clipboardLimit: Int,
+        retentionDays: Int,
+    ): Boolean {
+        if (service == null) return false
+        return try {
+            service.getRemotePreferences(Constants.PREFS_FILE).edit()
+                .putInt(Constants.KEY_GBOARD_CLIPBOARD_LIMIT, clipboardLimit)
+                .putInt(Constants.KEY_GBOARD_CLIPBOARD_RETENTION_DAYS, retentionDays)
+                .apply()
+            true
+        } catch (e: Throwable) {
+            Log.e(TAG, "Failed to write Gboard clipboard settings.", e)
+            false
+        }
+    }
+
     fun getHookInt(module: XposedModule, key: String, defValue: Int): Int {
         return try {
             val prefs = module.getRemotePreferences(Constants.PREFS_FILE)

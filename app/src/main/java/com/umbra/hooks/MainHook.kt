@@ -2,6 +2,7 @@ package com.umbra.hooks
 
 import android.annotation.SuppressLint
 import android.util.Log
+import com.umbra.hooks.apps.GboardHook
 import com.umbra.hooks.apps.GrafikaHook
 import com.umbra.hooks.apps.PydroidHook
 import com.umbra.hooks.apps.ShowlyHook
@@ -22,6 +23,7 @@ class MainHook : XposedModule() {
     // Lazy initialization mapping
     private val hooksFactory: Map<String, () -> AppHook> =
         mapOf(
+            "com.google.android.inputmethod.latin" to { GboardHook() },
             "ru.iiec.pydroid3" to { PydroidHook() },
             "org.picquantmedia.grafika" to { GrafikaHook() },
             "com.michaldrabik.showly2" to { ShowlyHook() },

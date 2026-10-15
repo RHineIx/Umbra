@@ -8,6 +8,16 @@
     <string name="desc_module_running_format">Running in %1$s %2$s (%3$s)</string>
     <string name="desc_module_enable_reboot">Enable in LSPosed and reboot.</string>
     
+    <string name="title_gboard">Gboard</string>
+    <string name="desc_gboard_features">Adjust clipboard capacity and retention. Tap to configure.</string>
+    <string name="gboard_settings_title">Gboard clipboard limits</string>
+    <string name="gboard_clipboard_limit_label">Maximum clipboard entries</string>
+    <string name="gboard_retention_days_label">Keep entries for (days)</string>
+    <string name="gboard_limit_invalid">Enter a value from 1 to 1000.</string>
+    <string name="gboard_days_invalid">Enter a value from 1 to 3650.</string>
+    <string name="action_save">Save</string>
+    <string name="toast_gboard_saved_restart">Settings saved. Restart Gboard to apply them.</string>
+
     <string name="title_pydroid">Pydroid 3</string>
     <string name="status_enabled">ENABLED</string>
     <string name="desc_pydroid_features">Premium unlock, No-Ads &amp; Redirects.</string>
