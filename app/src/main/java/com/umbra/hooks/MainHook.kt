@@ -1,61 +1,77 @@
 package com.umbra.hooks
 
-import com.umbra.hooks.apps.GboardHook
+import android.annotation.SuppressLint
+import android.util.Log
+import com.umbra.hooks.apps.GrafikaHook
 import com.umbra.hooks.apps.PydroidHook
+import com.umbra.hooks.apps.ShowlyHook
 import com.umbra.hooks.core.AppHook
-import de.robv.android.xposed.IXposedHookLoadPackage
-import de.robv.android.xposed.XC_MethodReplacement
-import de.robv.android.xposed.XposedBridge
-import de.robv.android.xposed.XposedHelpers
-import de.robv.android.xposed.callbacks.XC_LoadPackage
+import com.umbra.hooks.core.BaseDynamicHook
+import com.umbra.hooks.utils.Constants
+import com.umbra.hooks.utils.PrefsManager
+import io.github.libxposed.api.XposedModule
+import io.github.libxposed.api.XposedModuleInterface
+import java.util.concurrent.CopyOnWriteArrayList
 
-class MainHook : IXposedHookLoadPackage {
+@SuppressLint("NewApi")
+class MainHook : XposedModule() {
+    companion object {
+        private const val TAG = "UMBRA-MAIN"
+    }
 
-    // Initialize hooks list
-    private val hooks: List<AppHook> = listOf(
-        GboardHook(),
-        PydroidHook()
-    )
+    // Lazy initialization mapping
+    private val hooksFactory: Map<String, () -> AppHook> =
+        mapOf(
+            "ru.iiec.pydroid3" to { PydroidHook() },
+            "org.picquantmedia.grafika" to { GrafikaHook() },
+            "com.michaldrabik.showly2" to { ShowlyHook() },
+        )
 
-    override fun handleLoadPackage(lpparam: XC_LoadPackage.LoadPackageParam) {
-        val packageName = lpparam.packageName
-        
-        // 1. Self-Hook for Activation Check (Allows the app to know it's active)
-        if (packageName == "com.umbra.hooks") {
-            hookSelf(lpparam)
-            return
+    // API 102: Tracking active module instances for hot-reload scenarios securely
+    private val activeHooks = CopyOnWriteArrayList<AppHook>()
+
+    override fun onPackageLoaded(param: XposedModuleInterface.PackageLoadedParam) {
+        super.onPackageLoaded(param)
+        val packageName = param.packageName
+
+        val factory = hooksFactory[packageName] ?: return
+
+        val logsEnabled = PrefsManager.getHookInt(this, Constants.KEY_GLOBAL_LOGS, 0) == 1
+        if (logsEnabled) {
+            log(Log.INFO, TAG, "[DEBUG] Analyzing supported package load: $packageName")
         }
 
-        // 2. Dispatch Hooks safely
-        // Improved: Iterate and catch errors individually to prevent cascade failures
-        for (hook in hooks) {
-            if (packageName in hook.targetPackages) {
-                try {
-                    XposedBridge.log("[UMBRA] Loading hook for: $packageName")
-                    hook.onLoad(lpparam)
-                } catch (t: Throwable) {
-                    // Critical: Catching generic Throwable prevents app crashes on boot
-                    XposedBridge.log("[UMBRA] FATAL ERROR in ${hook.javaClass.simpleName}: ${t.message}")
-                    t.printStackTrace()
-                }
+        try {
+            val hook = factory()
+            activeHooks.add(hook)
+
+            if (logsEnabled) {
+                log(Log.INFO, TAG, "[MATCH] Executing ${hook.javaClass.simpleName} for $packageName")
+            }
+
+            hook.handleLoadPackage(this, param)
+
+            if (logsEnabled) {
+                log(Log.INFO, TAG, "[SUCCESS] ${hook.javaClass.simpleName} attached successfully.")
+            }
+        } catch (t: Throwable) {
+            if (logsEnabled) {
+                log(Log.ERROR, TAG, "[FATAL] Exception occurred during module execution", t)
             }
         }
     }
 
-    private fun hookSelf(lpparam: XC_LoadPackage.LoadPackageParam) {
+    override fun onHotReloading(param: XposedModuleInterface.HotReloadingParam): Boolean {
+        // Detach all hooks safely before hot-reloading to prevent memory leaks from the old generation
+        activeHooks.forEach { it.detachAll() }
+        activeHooks.clear()
+
         try {
-            XposedHelpers.findAndHookMethod(
-                "com.umbra.hooks.MainActivity",
-                lpparam.classLoader,
-                "isModuleActive",
-                object : XC_MethodReplacement() {
-                    override fun replaceHookedMethod(param: MethodHookParam): Any {
-                        return true
-                    }
-                }
-            )
-        } catch (_: Throwable) { 
-            // Ignore self-hook errors
+            // Shut down the shared background thread executor from the old classloader
+            BaseDynamicHook.sharedExecutor.shutdownNow()
+        } catch (_: Throwable) {
         }
+
+        return true // Confirm and allow the hot reload process
     }
 }

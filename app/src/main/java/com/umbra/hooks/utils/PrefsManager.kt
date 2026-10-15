@@ -1,37 +1,43 @@
 package com.umbra.hooks.utils
 
-import android.content.Context
-import android.net.Uri
+import android.util.Log
+import io.github.libxposed.api.XposedModule
+import io.github.libxposed.service.XposedService
 
 object PrefsManager {
-    
-    private const val AUTHORITY = "com.umbra.hooks.provider"
 
-    // --- Local Write (Used by GboardActivity) ---
-    // No need for fixPermissions anymore because we use a ContentProvider
-    fun putInt(context: Context, key: String, value: Int) {
-        val prefs = context.getSharedPreferences(Constants.PREFS_FILE, Context.MODE_PRIVATE)
-        prefs.edit().putInt(key, value).apply() // 'apply' is faster than 'commit'
+    private const val TAG = "UMBRA-PREFS"
+
+    fun putInt(service: XposedService?, key: String, value: Int): Boolean {
+        if (service == null) return false
+        return try {
+            val prefs = service.getRemotePreferences(Constants.PREFS_FILE)
+            prefs.edit().putInt(key, value).apply()
+            true
+        } catch (e: Throwable) {
+            Log.e(TAG, "Failed to write int to remote prefs. Key: $key", e)
+            false
+        }
     }
 
-    fun getLocalInt(context: Context, key: String, def: Int): Int {
-        return context.getSharedPreferences(Constants.PREFS_FILE, Context.MODE_PRIVATE)
-            .getInt(key, def)
+    fun getInt(service: XposedService?, key: String, defValue: Int): Int {
+        if (service == null) return defValue
+        return try {
+            val prefs = service.getRemotePreferences(Constants.PREFS_FILE)
+            prefs.getInt(key, defValue)
+        } catch (e: Throwable) {
+            Log.e(TAG, "Failed to read int from remote prefs. Key: $key", e)
+            defValue
+        }
     }
 
-    // --- Remote Read (Used by GboardHook via IPC) ---
-    // Only Int support is needed for Gboard (Limit & Retention)
-    fun getRemoteInt(context: Context, key: String, defValue: Int): Int {
-        try {
-            // URI Format: content://com.umbra.hooks.provider/int/<key>
-            val uri = Uri.parse("content://$AUTHORITY/int/$key")
-            val cursor = context.contentResolver.query(uri, null, null, null, null)
-            cursor?.use {
-                if (it.moveToFirst()) {
-                    return it.getInt(0)
-                }
-            }
-        } catch (_: Throwable) { }
-        return defValue
+    fun getHookInt(module: XposedModule, key: String, defValue: Int): Int {
+        return try {
+            val prefs = module.getRemotePreferences(Constants.PREFS_FILE)
+            prefs.getInt(key, defValue)
+        } catch (e: Throwable) {
+            module.log(Log.ERROR, TAG, "Failed to read int from hook prefs. Key: $key", e)
+            defValue
+        }
     }
 }

@@ -1,20 +1,26 @@
--keep class de.robv.android.xposed.** { *; }
--dontwarn de.robv.android.xposed.**
+-keep class io.github.libxposed.** { *; }
+-dontwarn io.github.libxposed.**
+
 -keep class org.luckypray.dexkit.** { *; }
 -dontwarn org.luckypray.dexkit.**
 
--keep class com.umbra.hooks.MainHook { *; }
--keep class com.umbra.hooks.core.** { *; }
--keep class com.umbra.hooks.apps.** { *; }
--keep class com.umbra.hooks.utils.** { *; }
--keep class com.umbra.hooks.BuildConfig { *; }
+-keep public class com.umbra.hooks.MainHook {
+    public <init>();
+}
 
--keep class com.umbra.hooks.MainActivity {
-    boolean isModuleActive();
+# Keep ViewModel constructors safe for Jetpack Lifecycle
+-keepclassmembers public class * extends androidx.lifecycle.ViewModel {
+    public <init>(...);
 }
 
 -keepattributes *Annotation*,Signature,InnerClasses,EnclosingMethod,Exceptions
 
+# Move all obfuscated classes into a single meaningless package
+-repackageclasses 'x'
+-allowaccessmodification
+-optimizationpasses 5
+
+# Remove standard Android Log calls to shrink APK (Xposed logs remain safe)
 -assumenosideeffects class android.util.Log {
     public static boolean isLoggable(java.lang.String, int);
     public static int v(...);
@@ -24,6 +30,6 @@
     public static int e(...);
 }
 
--repackageclasses 'a'
--allowaccessmodification
--optimizationpasses 5
+# Strip debug info to make reverse engineering significantly harder
+-renamesourcefileattribute SourceFile
+-keepattributes !SourceFile,!LineNumberTable,!LocalVariableTable,!LocalVariableTypeTable

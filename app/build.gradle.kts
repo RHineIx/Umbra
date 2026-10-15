@@ -1,23 +1,25 @@
 plugins {
-    id("com.android.application")
-    id("org.jetbrains.kotlin.android")
+    alias(libs.plugins.android.application)
 }
 
 android {
     namespace = "com.umbra.hooks"
-    compileSdk = 34
+    compileSdk = 37
 
     defaultConfig {
         applicationId = "com.umbra.hooks"
         minSdk = 26
-        targetSdk = 34
-        
-        versionCode = 20
-        versionName = "2.2.0"
+        targetSdk = 37
+        versionCode = 30200
+        versionName = "3.2.0"
 
         ndk {
             abiFilters.add("arm64-v8a")
         }
+    }
+
+    androidResources {
+        localeFilters += "en"
     }
 
     signingConfigs {
@@ -45,41 +47,74 @@ android {
             }
         }
     }
-    
+
     compileOptions {
-        sourceCompatibility = JavaVersion.VERSION_11
-        targetCompatibility = JavaVersion.VERSION_11
+        sourceCompatibility = JavaVersion.VERSION_17
+        targetCompatibility = JavaVersion.VERSION_17
     }
-    
-    kotlinOptions {
-        jvmTarget = "11"
-    }
-    
+
     buildFeatures {
-        viewBinding = true
+        viewBinding = false
         dataBinding = false
     }
 
     packaging {
         resources {
-            excludes += "META-INF/**"
             excludes += "**/attach_hotagent.dll"
             excludes += "LICENSE.txt"
         }
         jniLibs {
-            useLegacyPackaging = false 
+            useLegacyPackaging = true
         }
+    }
+
+    lint {
+        abortOnError = false
+        checkReleaseBuilds = false
     }
 }
 
 dependencies {
-    implementation("androidx.core:core-ktx:1.13.1")
-    implementation("androidx.appcompat:appcompat:1.7.1")
-    implementation("com.google.android.material:material:1.12.0")
-    implementation("androidx.constraintlayout:constraintlayout:2.2.1")
-   
-    compileOnly("de.robv.android.xposed:api:82")
+    implementation(libs.androidx.core.ktx)
+    implementation(libs.androidx.appcompat)
+    implementation(libs.material)
+    implementation(libs.androidx.constraintlayout)
 
-    // DexKit (Managed via Version Catalog)
+    // Lifecycle, ViewModel, and Activity KTX for Clean Architecture
+    implementation("androidx.lifecycle:lifecycle-viewmodel-ktx:2.8.6")
+    implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.8.6")
+    implementation("androidx.activity:activity-ktx:1.9.3")
+
+    compileOnly(libs.libxposed.api)
+    implementation(libs.libxposed.service)
     implementation(libs.dexkit)
 }
+
+// ACS_SIGNING_CONFIG_START
+val keystorePropertiesFile = file("keystore.properties")
+val acsProps = if (keystorePropertiesFile.exists()) {
+    keystorePropertiesFile.readLines()
+        .filter { '=' in it }
+        .associate { it.substringBefore('=').trim() to it.substringAfter('=').trim() }
+} else emptyMap()
+
+android {
+    signingConfigs {
+        maybeCreate("release").apply {
+            val sf = acsProps["storeFile"]
+            val sp = acsProps["storePassword"]
+            val ka = acsProps["keyAlias"]
+            val kp = acsProps["keyPassword"]
+            if (!sf.isNullOrBlank()) storeFile = file(sf)
+            if (!sp.isNullOrBlank()) storePassword = sp
+            if (!ka.isNullOrBlank()) keyAlias = ka
+            if (!kp.isNullOrBlank()) keyPassword = kp
+        }
+    }
+    buildTypes {
+        getByName("release") {
+            signingConfig = signingConfigs.getByName("release")
+        }
+    }
+}
+// ACS_SIGNING_CONFIG_END

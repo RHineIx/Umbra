@@ -1,3 +1,37 @@
 <resources>
     <string name="app_name">Umbra</string>
+    <string name="app_description">By @RHibeIx</string>
+    
+    <string name="title_lsposed_module">LSPosed Module</string>
+    <string name="title_module_activated">Module Activated</string>
+    <string name="title_module_inactive">Module Not Active</string>
+    <string name="desc_module_running_format">Running in %1$s %2$s (%3$s)</string>
+    <string name="desc_module_enable_reboot">Enable in LSPosed and reboot.</string>
+    
+    <string name="title_pydroid">Pydroid 3</string>
+    <string name="status_enabled">ENABLED</string>
+    <string name="desc_pydroid_features">Premium unlock, No-Ads &amp; Redirects.</string>
+    
+    <string name="title_grafika">Grafika</string>
+    <string name="desc_grafika_features">Premium unlock &amp; UI cleanup.</string>
+    
+    <string name="title_showly">Showly</string>
+    <string name="desc_showly_features">Premium unlock &amp; Sync bypass.</string>
+    
+    <string name="title_lsp_logs">LSP Logs</string>
+    <string name="desc_enable_logs">Enable Module Logs</string>
+
+    <string name="title_hide_icon">Hide Launcher Icon</string>
+    <string name="desc_hide_icon">Remove app icon from app drawer</string>
+    <string name="toast_icon_hidden">Icon hidden. Open via LSPosed manager.</string>
+    
+    <string name="toast_root_denied">Root denied</string>
+    <string name="toast_device_not_rooted">Device not rooted</string>
+
+    <string name="toast_settings_saved">Settings Saved</string>
+    <string name="toast_settings_failed">Failed to save settings</string>
+    <string name="toast_service_disconnected">Xposed service disconnected</string>
+    
+    <string name="app_version_format">App Version: v%1$s</string>
+    <string name="developer_info">Developer: RHine</string>
 </resources>
