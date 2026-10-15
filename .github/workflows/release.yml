@@ -1,139 +1,162 @@
-name: 🚀 Build & Release Umbra
+name: Umbra Release
 
 on:
   push:
     tags:
       - 'v*'
-  workflow_dispatch:
-    inputs:
-      release_type:
-        description: '📦 Select Release Channel'
-        required: true
-        default: 'stable'
-        type: choice
-        options:
-          - stable
-          - pre-release
-          - debug
 
 permissions:
   contents: write
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  group: umbra-release-${{ github.ref }}
+  cancel-in-progress: false
 
 env:
-  GRADLE_OPTS: "-Dorg.gradle.jvmargs='-Xmx4g -XX:+HeapDumpOnOutOfMemoryError' -Dorg.gradle.parallel=true -Dorg.gradle.caching=true"
+  GRADLE_OPTS: -Dorg.gradle.daemon=false -Dorg.gradle.parallel=false -Dorg.gradle.jvmargs=-Xmx1536m
 
 jobs:
-  build-and-release:
-    name: 🔨 Build and Publish
+  build:
+    name: Build and Publish
     runs-on: ubuntu-latest
-    timeout-minutes: 15
-
+    timeout-minutes: 35
     steps:
-      - name: 📥 Checkout repository
+      - name: Checkout repository
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
+          persist-credentials: true
 
-      - name: ☕ Set up JDK 17
+      - name: Set up JDK 17
         uses: actions/setup-java@v4
         with:
           java-version: '17'
           distribution: 'temurin'
+          cache: gradle
 
-      - name: 🐘 Setup Gradle
+      - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4
-        with:
-          cache-read-only: ${{ github.ref != 'refs/heads/main' }}
-          cache-cleanup: always
 
-      - name: 🏷️ Extract Version Information
-        id: extract_version
+      - name: Read release version
+        id: version
         env:
-          RELEASE_TYPE: ${{ github.event.inputs.release_type }}
+          TAG_NAME: ${{ github.ref_name }}
         run: |
           set -euo pipefail
+          VERSION_NAME="${TAG_NAME#v}"
+          [[ "$VERSION_NAME" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]] || {
+            echo "Tag must use vMAJOR.MINOR.PATCH with an optional prerelease suffix" >&2
+            exit 1
+          }
 
-          if [[ "$GITHUB_EVENT_NAME" == "push" ]]; then
-            TAG_NAME="$GITHUB_REF_NAME"
-          else
-            BASE_VERSION="$(sed -n 's/^umbraVersionName=//p' gradle.properties | head -n 1)"
-            case "$RELEASE_TYPE" in
-              stable) TAG_NAME="v${BASE_VERSION}" ;;
-              pre-release) TAG_NAME="v${BASE_VERSION}-rc" ;;
-              debug) TAG_NAME="v${BASE_VERSION}-debug" ;;
-              *) echo "Unsupported release type: $RELEASE_TYPE" >&2; exit 1 ;;
-            esac
-          fi
+          TAG_COUNT="$(git tag --list 'v*' | wc -l | tr -d '[:space:]')"
+          [[ "$TAG_COUNT" =~ ^[1-9][0-9]*$ ]] || {
+            echo "Could not calculate versionCode from Git tags" >&2
+            exit 1
+          }
+          VERSION_CODE=$((30200 + TAG_COUNT))
 
-          python3 scripts/version_from_tag.py "$TAG_NAME" >> "$GITHUB_OUTPUT"
+          {
+            echo "version_name=$VERSION_NAME"
+            echo "version_code=$VERSION_CODE"
+            echo "tag_name=$TAG_NAME"
+          } >> "$GITHUB_OUTPUT"
+          echo "Building Umbra $VERSION_NAME (versionCode $VERSION_CODE)"
 
-      - name: 🔐 Decode Keystore
+      - name: Decode signing keystore
         env:
-          ENCODED_KEYSTORE: ${{ secrets.KEYSTORE_BASE64 }}
+          KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
         run: |
-          echo "$ENCODED_KEYSTORE" | base64 --decode > app/keystore.jks
+          set -euo pipefail
+          [[ -n "$KEYSTORE_BASE64" ]] || {
+            echo "Missing required repository secret: KEYSTORE_BASE64" >&2
+            exit 1
+          }
+          printf '%s' "$KEYSTORE_BASE64" | base64 --decode > "$GITHUB_WORKSPACE/app/keystore.jks"
+          test -s "$GITHUB_WORKSPACE/app/keystore.jks"
 
-      - name: 🛠️ Build Optimized APK
+      - name: Validate signing secrets
         env:
+          SIGNING_STORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
           SIGNING_KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
           SIGNING_KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
-          SIGNING_STORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
-          RELEASE_VERSION_NAME: ${{ steps.extract_version.outputs.version_name }}
-          RELEASE_VERSION_CODE: ${{ steps.extract_version.outputs.version_code }}
-        run: |
-          chmod +x gradlew
-          ./gradlew assembleRelease --no-daemon \
-            "-PumbraVersionName=$RELEASE_VERSION_NAME" \
-            "-PumbraVersionCode=$RELEASE_VERSION_CODE"
-
-      - name: 🧹 Secure Keystore Cleanup
-        if: always()
-        run: rm -f app/keystore.jks
-
-      - name: 📦 Locate and Rename APK
-        id: rename_apk
-        env:
-          TAG_NAME: ${{ steps.extract_version.outputs.tag_name }}
         run: |
           set -euo pipefail
-          APK_PATH="$(find app/build/outputs/apk/release -name '*.apk' -type f | head -n 1)"
-          if [[ -z "$APK_PATH" ]]; then
-            echo "APK not found" >&2
+          for variable in SIGNING_STORE_PASSWORD SIGNING_KEY_ALIAS SIGNING_KEY_PASSWORD; do
+            [[ -n "${!variable}" ]] || {
+              echo "Missing required repository secret for $variable" >&2
+              exit 1
+            }
+          done
+
+      - name: Run unit tests
+        run: ./gradlew testDebugUnitTest --no-daemon --stacktrace
+
+      - name: Build signed release APK
+        env:
+          VERSION_NAME: ${{ steps.version.outputs.version_name }}
+          VERSION_CODE: ${{ steps.version.outputs.version_code }}
+          SIGNING_STORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          SIGNING_KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+          SIGNING_KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          chmod +x ./gradlew
+          ./gradlew assembleRelease --no-daemon --stacktrace \
+            -PAPP_VERSION_CODE="$VERSION_CODE" \
+            -PAPP_VERSION_NAME="$VERSION_NAME"
+
+      - name: Verify APK and prepare artifacts
+        id: artifacts
+        env:
+          VERSION_NAME: ${{ steps.version.outputs.version_name }}
+          VERSION_CODE: ${{ steps.version.outputs.version_code }}
+          TAG_NAME: ${{ steps.version.outputs.tag_name }}
+        run: |
+          set -euo pipefail
+          APK_DIR="app/build/outputs/apk/release"
+          mapfile -t APKS < <(find "$APK_DIR" -maxdepth 1 -type f -name '*.apk' | sort)
+          (( ${#APKS[@]} > 0 )) || {
+            echo "No release APK was produced" >&2
             exit 1
-          fi
+          }
+          APKSIGNER="$(find "$ANDROID_HOME/build-tools" -type f -name apksigner | sort -V | tail -n 1)"
+          [[ -x "$APKSIGNER" ]] || {
+            echo "Android apksigner was not found" >&2
+            exit 1
+          }
 
-          TARGET_NAME="Umbra-${TAG_NAME}.apk"
-          mv "$APK_PATH" "$TARGET_NAME"
-          echo "apk_path=$TARGET_NAME" >> "$GITHUB_OUTPUT"
+          mkdir -p release_artifacts
+          for apk in "${APKS[@]}"; do
+            "$APKSIGNER" verify --verbose "$apk"
+            cp "$apk" "release_artifacts/Umbra-${TAG_NAME}-$(basename "$apk")"
+          done
+          {
+            printf 'Umbra release %s (versionCode %s)\n' "$VERSION_NAME" "$VERSION_CODE"
+            printf 'Commit: %s\n\n' "$GITHUB_SHA"
+            sha256sum release_artifacts/*.apk
+          } > release_artifacts/SHA256SUMS.txt
+          cat release_artifacts/SHA256SUMS.txt
 
-      - name: 📤 Upload Artifact (Actions Panel)
+      - name: Upload build artifact
         uses: actions/upload-artifact@v4
         with:
-          name: Umbra-APK-${{ steps.extract_version.outputs.tag_name }}
-          path: ${{ steps.rename_apk.outputs.apk_path }}
-          retention-days: 14
-          compression-level: 0
+          name: Umbra-${{ steps.version.outputs.tag_name }}
+          path: release_artifacts/*
+          if-no-files-found: error
+          retention-days: 30
 
-      - name: 🎉 Publish GitHub Release
+      - name: Publish GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ steps.extract_version.outputs.tag_name }}
-          name: ${{ steps.extract_version.outputs.release_name }}
-          prerelease: ${{ steps.extract_version.outputs.prerelease }}
+          tag_name: ${{ steps.version.outputs.tag_name }}
+          name: Umbra ${{ steps.version.outputs.tag_name }}
           generate_release_notes: true
-          body: |
-            ### 🚀 Umbra Automated Release
-
-            - **Version:** ${{ steps.extract_version.outputs.version_name }}
-            - **Version code:** ${{ steps.extract_version.outputs.version_code }}
-            - **Channel:** ${{ steps.extract_version.outputs.channel }}
-            - **Build:** R8 optimized, obfuscated, and signed
-
-            > Please ensure that LSPosed is up to date before installing.
-          files: ${{ steps.rename_apk.outputs.apk_path }}
+          prerelease: ${{ contains(steps.version.outputs.version_name, '-') }}
+          files: release_artifacts/*
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ github.token }}
+
+      - name: Clean signing material
+        if: ${{ always() }}
+        run: rm -f "$GITHUB_WORKSPACE/app/keystore.jks"
