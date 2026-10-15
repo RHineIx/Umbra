@@ -1,6 +1,9 @@
 name: 🚀 Build & Release Umbra
 
 on:
+  push:
+    tags:
+      - 'v*'
   workflow_dispatch:
     inputs:
       release_type:
@@ -27,13 +30,13 @@ jobs:
   build-and-release:
     name: 🔨 Build and Publish
     runs-on: ubuntu-latest
-    timeout-minutes: 15 # Prevent hanging workflows
+    timeout-minutes: 15
 
     steps:
       - name: 📥 Checkout repository
         uses: actions/checkout@v4
         with:
-          fetch-depth: 0 # Required for auto-generating release notes
+          fetch-depth: 0
 
       - name: ☕ Set up JDK 17
         uses: actions/setup-java@v4
@@ -41,41 +44,32 @@ jobs:
           java-version: '17'
           distribution: 'temurin'
 
-      - name: 🐘 Setup Gradle (Optimized v4 Caching with zstd)
+      - name: 🐘 Setup Gradle
         uses: gradle/actions/setup-gradle@v4
         with:
-          # Only write to cache if building from the main branch. Other branches will only read.
           cache-read-only: ${{ github.ref != 'refs/heads/main' }}
-          # Automatically delete unused dependencies and daemon logs before saving cache
           cache-cleanup: always
 
       - name: 🏷️ Extract Version Information
         id: extract_version
+        env:
+          RELEASE_TYPE: ${{ github.event.inputs.release_type }}
         run: |
-          VERSION_CODE=$(grep -m 1 'versionCode\s*=\s*' app/build.gradle.kts | grep -o '[0-9]\+')
-          VERSION_NAME=$(grep -m 1 'versionName\s*=\s*' app/build.gradle.kts | cut -d'"' -f2)
-          
-          if [ -z "$VERSION_CODE" ] || [ -z "$VERSION_NAME" ]; then
-            echo "❌ Error: Could not extract version info!"
-            exit 1
-          fi
-          
-          echo "VERSION_CODE=$VERSION_CODE" >> $GITHUB_ENV
-          echo "VERSION_NAME=$VERSION_NAME" >> $GITHUB_ENV
-          
-          if [ "${{ github.event.inputs.release_type }}" == "stable" ]; then
-            echo "TAG_NAME=v${VERSION_NAME}" >> $GITHUB_ENV
-            echo "RELEASE_NAME=Umbra v${VERSION_NAME} (Stable)" >> $GITHUB_ENV
-            echo "IS_PRERELEASE=false" >> $GITHUB_ENV
-          elif [ "${{ github.event.inputs.release_type }}" == "pre-release" ]; then
-            echo "TAG_NAME=v${VERSION_NAME}-rc" >> $GITHUB_ENV
-            echo "RELEASE_NAME=Umbra v${VERSION_NAME} (Release Candidate)" >> $GITHUB_ENV
-            echo "IS_PRERELEASE=true" >> $GITHUB_ENV
+          set -euo pipefail
+
+          if [[ "$GITHUB_EVENT_NAME" == "push" ]]; then
+            TAG_NAME="$GITHUB_REF_NAME"
           else
-            echo "TAG_NAME=v${VERSION_NAME}-debug" >> $GITHUB_ENV
-            echo "RELEASE_NAME=Umbra v${VERSION_NAME} (Debug Preview)" >> $GITHUB_ENV
-            echo "IS_PRERELEASE=true" >> $GITHUB_ENV
+            BASE_VERSION="$(sed -n 's/^umbraVersionName=//p' gradle.properties | head -n 1)"
+            case "$RELEASE_TYPE" in
+              stable) TAG_NAME="v${BASE_VERSION}" ;;
+              pre-release) TAG_NAME="v${BASE_VERSION}-rc" ;;
+              debug) TAG_NAME="v${BASE_VERSION}-debug" ;;
+              *) echo "Unsupported release type: $RELEASE_TYPE" >&2; exit 1 ;;
+            esac
           fi
+
+          python3 scripts/version_from_tag.py "$TAG_NAME" >> "$GITHUB_OUTPUT"
 
       - name: 🔐 Decode Keystore
         env:
@@ -88,49 +82,58 @@ jobs:
           SIGNING_KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
           SIGNING_KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
           SIGNING_STORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          RELEASE_VERSION_NAME: ${{ steps.extract_version.outputs.version_name }}
+          RELEASE_VERSION_CODE: ${{ steps.extract_version.outputs.version_code }}
         run: |
           chmod +x gradlew
-          ./gradlew assembleRelease --no-daemon
+          ./gradlew assembleRelease --no-daemon \
+            "-PumbraVersionName=$RELEASE_VERSION_NAME" \
+            "-PumbraVersionCode=$RELEASE_VERSION_CODE"
 
       - name: 🧹 Secure Keystore Cleanup
-        if: always() # Ensure this runs even if the build fails
+        if: always()
         run: rm -f app/keystore.jks
 
       - name: 📦 Locate and Rename APK
+        id: rename_apk
+        env:
+          TAG_NAME: ${{ steps.extract_version.outputs.tag_name }}
         run: |
-          APK_PATH=$(find app/build/outputs/apk/release -name "*.apk" -type f | head -n 1)
-          if [ -z "$APK_PATH" ]; then
-            echo "❌ Error: Release APK not found!"
+          set -euo pipefail
+          APK_PATH="$(find app/build/outputs/apk/release -name '*.apk' -type f | head -n 1)"
+          if [[ -z "$APK_PATH" ]]; then
+            echo "APK not found" >&2
             exit 1
           fi
-          
-          TARGET_NAME="Umbra-${{ env.TAG_NAME }}.apk"
+
+          TARGET_NAME="Umbra-${TAG_NAME}.apk"
           mv "$APK_PATH" "$TARGET_NAME"
-          echo "APK_FINAL_PATH=$TARGET_NAME" >> $GITHUB_ENV
+          echo "apk_path=$TARGET_NAME" >> "$GITHUB_OUTPUT"
 
       - name: 📤 Upload Artifact (Actions Panel)
         uses: actions/upload-artifact@v4
         with:
-          name: Umbra-APK-${{ env.TAG_NAME }}
-          path: ${{ env.APK_FINAL_PATH }}
-          retention-days: 14 # Keep artifact for 14 days in the Actions tab
-          compression-level: 0 # Zstd compression is handled dynamically; 0 saves CPU time on already compressed APKs
+          name: Umbra-APK-${{ steps.extract_version.outputs.tag_name }}
+          path: ${{ steps.rename_apk.outputs.apk_path }}
+          retention-days: 14
+          compression-level: 0
 
       - name: 🎉 Publish GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ env.TAG_NAME }}
-          name: ${{ env.RELEASE_NAME }}
-          prerelease: ${{ env.IS_PRERELEASE }}
-          generate_release_notes: true # Automatically append git commit history
+          tag_name: ${{ steps.extract_version.outputs.tag_name }}
+          name: ${{ steps.extract_version.outputs.release_name }}
+          prerelease: ${{ steps.extract_version.outputs.prerelease }}
+          generate_release_notes: true
           body: |
             ### 🚀 Umbra Automated Release
-            
-            - **Version:** ${{ env.VERSION_NAME }} (Code: ${{ env.VERSION_CODE }})
-            - **Channel:** ${{ github.event.inputs.release_type }}
-            - **Build Configuration:** R8 Optimized, Obfuscated & Signed
-            
-            > **Note:** Please ensure you have the latest version of LSPosed installed before updating.
-          files: ${{ env.APK_FINAL_PATH }}
+
+            - **Version:** ${{ steps.extract_version.outputs.version_name }}
+            - **Version code:** ${{ steps.extract_version.outputs.version_code }}
+            - **Channel:** ${{ steps.extract_version.outputs.channel }}
+            - **Build:** R8 optimized, obfuscated, and signed
+
+            > Please ensure that LSPosed is up to date before installing.
+          files: ${{ steps.rename_apk.outputs.apk_path }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
