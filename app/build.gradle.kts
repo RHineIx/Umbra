@@ -2,9 +2,6 @@ plugins {
     alias(libs.plugins.android.application)
 }
 
-val umbraVersionName = providers.gradleProperty("umbraVersionName").orElse("3.2.0").get()
-val umbraVersionCode = providers.gradleProperty("umbraVersionCode").orElse("30200").get().toInt()
-
 android {
     namespace = "com.umbra.hooks"
     compileSdk = 37
@@ -13,8 +10,12 @@ android {
         applicationId = "com.umbra.hooks"
         minSdk = 26
         targetSdk = 37
-        versionCode = umbraVersionCode
-        versionName = umbraVersionName
+        versionCode = project.findProperty("APP_VERSION_CODE")?.toString()?.toInt()
+            ?: System.getenv("APP_VERSION_CODE")?.toInt()
+            ?: 30200
+        versionName = project.findProperty("APP_VERSION_NAME")?.toString()
+            ?: System.getenv("APP_VERSION_NAME")
+            ?: "3.2.0"
 
         ndk {
             abiFilters.add("arm64-v8a")
