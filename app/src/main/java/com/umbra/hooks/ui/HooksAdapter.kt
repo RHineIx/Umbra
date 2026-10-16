@@ -1,10 +1,9 @@
 package com.umbra.hooks.ui
 
-import android.content.res.ColorStateList
-import android.util.TypedValue
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
+import android.widget.ImageView
 import android.widget.TextView
 import androidx.recyclerview.widget.RecyclerView
 import com.umbra.hooks.R
@@ -16,7 +15,7 @@ class HooksAdapter(
 
     class HookViewHolder(view: View) : RecyclerView.ViewHolder(view) {
         val tvHookTitle: TextView = view.findViewById(R.id.tvHookTitle)
-        val tvHookStatus: TextView = view.findViewById(R.id.tvHookStatus)
+        val ivCustomize: ImageView = view.findViewById(R.id.ivCustomize)
         val tvHookDesc: TextView = view.findViewById(R.id.tvHookDesc)
     }
 
@@ -28,20 +27,15 @@ class HooksAdapter(
     override fun onBindViewHolder(holder: HookViewHolder, position: Int) {
         val hook = hooks[position]
         val context = holder.itemView.context
-        val theme = context.theme
-        val typedValue = TypedValue()
 
         holder.tvHookTitle.setText(hook.titleResId)
         holder.tvHookDesc.setText(hook.descriptionResId)
-
-        holder.tvHookStatus.setText(R.string.status_enabled)
-        
-        // Dynamic secondary color (Enabled)
-        theme.resolveAttribute(com.google.android.material.R.attr.colorSecondaryContainer, typedValue, true)
-        holder.tvHookStatus.backgroundTintList = ColorStateList.valueOf(typedValue.data)
-        
-        theme.resolveAttribute(com.google.android.material.R.attr.colorOnSecondaryContainer, typedValue, true)
-        holder.tvHookStatus.setTextColor(typedValue.data)
+        holder.ivCustomize.visibility = if (hook.settingsAvailable) View.VISIBLE else View.GONE
+        holder.ivCustomize.contentDescription = if (hook.settingsAvailable) {
+            context.getString(R.string.gboard_customize_hint)
+        } else {
+            null
+        }
         
         holder.itemView.isClickable = hook.settingsAvailable
         holder.itemView.isFocusable = hook.settingsAvailable

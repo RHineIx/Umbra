@@ -1,13 +1,15 @@
 [versions]
-agp = "9.1.0"
-kotlin = "2.3.20"
-coreKtx = "1.18.0"
-appcompat = "1.7.1"
-material = "1.13.0"
-constraintlayout = "2.2.1"
-dexkit = "2.1.0"
+agp = "9.4.1"
+kotlin = "2.4.21"
+coreKtx = "1.19.1"
+appcompat = "1.8.0"
+material = "1.14.0"
+constraintlayout = "2.2.2"
+dexkit = "2.3.0"
 libxposed-api = "102.0.0"
 libxposed-service = "102.0.0"
+lifecycle = "2.11.0"
+activity = "1.13.0"
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }
@@ -20,3 +22,6 @@ androidx-constraintlayout = { group = "androidx.constraintlayout", name = "const
 dexkit = { group = "org.luckypray", name = "dexkit", version.ref = "dexkit" }
 libxposed-api = { group = "io.github.libxposed", name = "api", version.ref = "libxposed-api" }
 libxposed-service = { group = "io.github.libxposed", name = "service", version.ref = "libxposed-service" }
+androidx-lifecycle-viewmodel-ktx = { group = "androidx.lifecycle", name = "lifecycle-viewmodel-ktx", version.ref = "lifecycle" }
+androidx-lifecycle-runtime-ktx = { group = "androidx.lifecycle", name = "lifecycle-runtime-ktx", version.ref = "lifecycle" }
+androidx-activity-ktx = { group = "androidx.activity", name = "activity-ktx", version.ref = "activity" }

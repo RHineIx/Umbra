@@ -11,6 +11,7 @@ import android.content.pm.PackageManager
 import android.content.res.ColorStateList
 import android.net.Uri
 import android.os.Bundle
+import android.provider.Settings
 import android.text.InputType
 import android.util.TypedValue
 import android.view.View
@@ -43,9 +44,7 @@ import com.umbra.hooks.utils.Constants
 import com.umbra.hooks.utils.PrefsManager
 import io.github.libxposed.service.XposedService
 import io.github.libxposed.service.XposedServiceHelper
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
 import java.lang.ref.WeakReference
 import kotlin.math.abs
 import kotlin.system.exitProcess
@@ -58,6 +57,8 @@ class MainActivity : AppCompatActivity() {
     private var currentActiveState: Boolean? = null
 
     companion object {
+        private const val GBOARD_PACKAGE_NAME = "com.google.android.inputmethod.latin"
+
         @Volatile
         var xposedService: XposedService? = null
             private set
@@ -245,10 +246,6 @@ class MainActivity : AppCompatActivity() {
             }
         }
 
-        findViewById<ImageView>(R.id.imgLsposed).setOnClickListener {
-            openLSPosedManager()
-        }
-
         swGlobalLogs = findViewById(R.id.swGlobalLogs)
         swGlobalLogs.setOnCheckedChangeListener { _, isChecked ->
             viewModel.toggleLogs(isChecked)
@@ -339,14 +336,26 @@ class MainActivity : AppCompatActivity() {
                 }
 
                 if (PrefsManager.putGboardClipboardSettings(service, clipboardLimit, retentionDays)) {
-                    Toast.makeText(this, R.string.toast_gboard_saved_restart, Toast.LENGTH_LONG).show()
                     dialog.dismiss()
+                    Toast.makeText(this, R.string.toast_gboard_saved_force_stop, Toast.LENGTH_LONG).show()
+                    openGboardAppSettings()
                 } else {
                     Toast.makeText(this, R.string.toast_settings_failed, Toast.LENGTH_SHORT).show()
                 }
             }
         }
         dialog.show()
+    }
+
+    private fun openGboardAppSettings() {
+        val intent = Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
+            data = Uri.fromParts("package", GBOARD_PACKAGE_NAME, null)
+        }
+        try {
+            startActivity(intent)
+        } catch (_: Exception) {
+            Toast.makeText(this, R.string.toast_gboard_settings_unavailable, Toast.LENGTH_LONG).show()
+        }
     }
 
     private fun observeState() {
@@ -448,15 +457,6 @@ class MainActivity : AppCompatActivity() {
                 img.imageTintList = ColorStateList.valueOf(c)
             }
             start()
-        }
-    }
-
-    private fun openLSPosedManager() {
-        lifecycleScope.launch(Dispatchers.IO) {
-            try {
-                val process = Runtime.getRuntime().exec(arrayOf("su", "-c", "am broadcast -a android.telephony.action.SECRET_CODE -d android_secret_code://5776733 android"))
-                if (process.waitFor() != 0) withContext(Dispatchers.Main) { Toast.makeText(this@MainActivity, R.string.toast_root_denied, Toast.LENGTH_SHORT).show() }
-            } catch (_: Exception) { withContext(Dispatchers.Main) { Toast.makeText(this@MainActivity, R.string.toast_device_not_rooted, Toast.LENGTH_SHORT).show() } }
         }
     }
 

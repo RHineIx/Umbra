@@ -85,9 +85,9 @@ dependencies {
     implementation(libs.androidx.constraintlayout)
 
     // Lifecycle, ViewModel, and Activity KTX for Clean Architecture
-    implementation("androidx.lifecycle:lifecycle-viewmodel-ktx:2.8.6")
-    implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.8.6")
-    implementation("androidx.activity:activity-ktx:1.9.3")
+    implementation(libs.androidx.lifecycle.viewmodel.ktx)
+    implementation(libs.androidx.lifecycle.runtime.ktx)
+    implementation(libs.androidx.activity.ktx)
 
     compileOnly(libs.libxposed.api)
     implementation(libs.libxposed.service)
