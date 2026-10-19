@@ -42,4 +42,7 @@
     
     <string name="app_version_format">App Version: v%1$s</string>
     <string name="developer_info">Developer: RHine</string>
+    <string name="toast_link_unavailable">Could not open link</string>
+    <string name="status_expanded">Expanded</string>
+    <string name="status_collapsed">Collapsed</string>
 </resources>

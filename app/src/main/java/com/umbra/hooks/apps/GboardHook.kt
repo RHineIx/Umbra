@@ -2,6 +2,13 @@ package com.umbra.hooks.apps
 
 import android.annotation.SuppressLint
 import android.net.Uri
+import android.app.Application
+import android.content.Context
+import android.os.Build
+import io.github.libxposed.api.XposedModule
+import io.github.libxposed.api.XposedModuleInterface
+import java.io.File
+import java.util.concurrent.atomic.AtomicBoolean
 import com.umbra.hooks.core.BaseDynamicHook
 import com.umbra.hooks.utils.Constants
 import com.umbra.hooks.utils.PrefsManager
@@ -35,6 +42,13 @@ class GboardHook : BaseDynamicHook() {
         ).coerceIn(1, MAX_RETENTION_DAYS).toLong() * MILLIS_PER_DAY
     }
 
+    private val initialized = AtomicBoolean(false)
+    private var providerHookInstalled = false
+    private var flagsHookInstalled = false
+    private var retentionHookInstalled = false
+    private val withinCapacityLogged = AtomicBoolean(false)
+    private val overCapacityLogged = AtomicBoolean(false)
+
     companion object {
         private const val GBOARD_PACKAGE = "com.google.android.inputmethod.latin"
         private const val CLIPBOARD_PROVIDER =
@@ -43,14 +57,80 @@ class GboardHook : BaseDynamicHook() {
         private const val KEY_RETENTION_METHOD = "gboard_retention_method"
         private const val PREF_CLIPBOARD_LIMIT = Constants.KEY_GBOARD_CLIPBOARD_LIMIT
         private const val PREF_RETENTION_DAYS = Constants.KEY_GBOARD_CLIPBOARD_RETENTION_DAYS
-        private const val TIMESTAMP_FILTER = "timestamp >= ?"
+        internal const val CACHE_SCHEMA_KEY = "gboard_hook_schema"
+        internal const val CACHE_SCHEMA = 2
+        private const val TARGET_VERSION_KEY = "gboard_target_version"
+        private val timestampFilter = Regex("\\btimestamp\\s*>=\\s*\\?", RegexOption.IGNORE_CASE)
         private const val MILLIS_PER_DAY = 24L * 60L * 60L * 1000L
         private const val MAX_CLIPBOARD_LIMIT = 1000
         private const val MAX_RETENTION_DAYS = 3650
     }
 
+    // Install discovery before Application.onCreate, as the working reference does.
+    // The shared base engine scans only sourceDir asynchronously and is unsuitable
+    // for flags that Gboard reads and caches during startup. Other hooks keep that engine.
+    override fun handleLoadPackage(module: XposedModule, param: XposedModuleInterface.PackageLoadedParam) {
+        xposedModule = module
+        targetClassLoader = param.defaultClassLoader
+        logsEnabled = PrefsManager.getHookInt(module, Constants.KEY_GLOBAL_LOGS, 0) == 1
+        val attach = Application::class.java.getDeclaredMethod("attach", Context::class.java)
+        registerHook(module.hook(attach).intercept { chain ->
+            val result = chain.proceed()
+            val context = chain.args.firstOrNull() as? Context
+            if (context != null && initialized.compareAndSet(false, true)) {
+                try {
+                    initializeClipboardHooks(context)
+                } catch (t: Throwable) {
+                    initialized.set(false)
+                    logError("[ERROR] Gboard clipboard initialization failed; discovery will be retried.", t)
+                }
+            }
+            result
+        })
+        onPackageLoaded(targetClassLoader)
+    }
+
+    private fun initializeClipboardHooks(context: Context) {
+        targetClassLoader = context.classLoader
+        // Retry if the provider was not yet resolvable at package-load time.
+        if (!providerHookInstalled) hookClipboardProvider(targetClassLoader)
+        val cache = context.getSharedPreferences(prefsCacheName, Context.MODE_PRIVATE)
+        val info = context.packageManager.getPackageInfo(context.packageName, 0)
+        val version = if (Build.VERSION.SDK_INT >= 28) info.longVersionCode else info.versionCode.toLong()
+        logInfo("[CONFIG] Gboard version=${info.versionName} ($version), clipboardLimit=$clipboardLimit, " +
+            "retentionDays=${retentionDurationMillis / MILLIS_PER_DAY}.")
+        val cachedRead = cache.getString(KEY_READ_CONFIG_METHOD, null)?.let { resolveMethod(targetClassLoader, it) }
+        val cachedRetention = cache.getString(KEY_RETENTION_METHOD, null)?.let { resolveMethod(targetClassLoader, it) }
+        if (cache.getLong(TARGET_VERSION_KEY, -1) == version && hasValidCache(cache) &&
+            cachedRead != null && cachedRetention != null) {
+            applyHooks(targetClassLoader, cache)
+        } else {
+            cache.edit().remove(CACHE_SCHEMA_KEY).apply()
+            try {
+                System.loadLibrary("dexkit")
+            } catch (_: UnsatisfiedLinkError) {
+                System.load(File(xposedModule.moduleApplicationInfo.nativeLibraryDir, "libdexkit.so").absolutePath)
+            }
+            // Includes split APKs and in-memory DEX exposed by the target's loader.
+            DexKitBridge.create(targetClassLoader, true).use { bridge ->
+                performSearchSynchronous(bridge, cache)
+            }
+        }
+        if (flagsHookInstalled && retentionHookInstalled) {
+            cache.edit().putInt(CACHE_SCHEMA_KEY, CACHE_SCHEMA).putLong(TARGET_VERSION_KEY, version).apply()
+            logInfo("[SUCCESS] Gboard clipboard flags and retention hooks are installed.")
+        } else {
+            // Empty or failed results must never permanently suppress rediscovery.
+            cache.edit().remove(CACHE_SCHEMA_KEY).apply()
+            initialized.set(false)
+            logInfo("[WARN] Gboard discovery is incomplete; the next startup will retry.")
+        }
+    }
+
     override fun hasValidCache(cachePrefs: SharedPreferences): Boolean =
-        cachePrefs.contains(KEY_READ_CONFIG_METHOD) && cachePrefs.contains(KEY_RETENTION_METHOD)
+        cachePrefs.getInt(CACHE_SCHEMA_KEY, 0) == CACHE_SCHEMA &&
+            !cachePrefs.getString(KEY_READ_CONFIG_METHOD, null).isNullOrBlank() &&
+            !cachePrefs.getString(KEY_RETENTION_METHOD, null).isNullOrBlank()
 
     override fun performSearchSynchronous(bridge: DexKitBridge, cachePrefs: SharedPreferences) {
         val readConfigMethod =
@@ -59,14 +139,18 @@ class GboardHook : BaseDynamicHook() {
                     usingStrings("Invalid flag: ")
                     returnType("java.lang.Object")
                 }
-            }.singleOrNull()?.toDexMethod()?.serialize().orEmpty()
+            }.map { it.toDexMethod() }
+                .filter { it.paramTypeNames.isEmpty() }
+                .singleOrNull()?.serialize().orEmpty()
 
         val retentionMethod =
             bridge.findMethod {
                 matcher {
                     usingStrings("Failed to parse retention hours")
                 }
-            }.singleOrNull()?.toDexMethod()?.serialize().orEmpty()
+            }.map { it.toDexMethod() }
+                .filter { it.returnTypeName == "long" || it.returnTypeName == "java.lang.Long" }
+                .singleOrNull()?.serialize().orEmpty()
 
         cachePrefs.edit()
             .putString(KEY_READ_CONFIG_METHOD, readConfigMethod)
@@ -87,14 +171,18 @@ class GboardHook : BaseDynamicHook() {
         cachePrefs.getString(KEY_READ_CONFIG_METHOD, null)
             ?.takeIf(String::isNotEmpty)
             ?.let { serialized ->
-                resolveMethod(classLoader, serialized)?.let(::hookClipboardFlags)
+                resolveMethod(classLoader, serialized)?.let { method ->
+                    if (!flagsHookInstalled) hookClipboardFlags(method)
+                }
                     ?: logInfo("[WARN] Cached clipboard flag method could not be resolved.")
             }
 
         cachePrefs.getString(KEY_RETENTION_METHOD, null)
             ?.takeIf(String::isNotEmpty)
             ?.let { serialized ->
-                resolveMethod(classLoader, serialized)?.let(::hookRetentionPeriod)
+                resolveMethod(classLoader, serialized)?.let { method ->
+                    if (!retentionHookInstalled) hookRetentionPeriod(method)
+                }
                     ?: logInfo("[WARN] Cached clipboard retention method could not be resolved.")
             }
     }
@@ -119,29 +207,13 @@ class GboardHook : BaseDynamicHook() {
             registerHook(xposedModule.hook(queryMethod).intercept { chain ->
                 val args = chain.args.toTypedArray()
                 try {
-                    val selection = args.getOrNull(2) as? String
-                    val selectionArgs = args.getOrNull(3) as? Array<*>
-                    val timestampArgument = selection?.let(::timestampArgumentIndex) ?: -1
-
-                    if (selectionArgs != null && timestampArgument in selectionArgs.indices) {
-                        val updatedArgs = arrayOfNulls<String>(selectionArgs.size)
-                        for (index in selectionArgs.indices) {
-                            updatedArgs[index] = selectionArgs[index] as? String
-                        }
-                        updatedArgs[timestampArgument] =
-                            (System.currentTimeMillis() - retentionDurationMillis).toString()
-                        args[3] = updatedArgs
-                    }
-
-                    val sortOrder = args.getOrNull(4) as? String
-                    if (sortOrder?.trim()?.equals("timestamp DESC limit 5", ignoreCase = true) == true) {
-                        args[4] = "timestamp DESC limit $clipboardLimit"
-                    }
+                    rewriteClipboardQuery(args, clipboardLimit, retentionDurationMillis, System.currentTimeMillis())
                 } catch (t: Throwable) {
-                    logError("[WARN] Could not adjust a Gboard clipboard query; leaving its arguments unchanged.", t)
+                    logError("[WARN] Could not adjust a Gboard clipboard query.", t)
                 }
                 chain.proceed(args)
             })
+            providerHookInstalled = true
             logInfo("[SUCCESS] Gboard clipboard provider query hook installed.")
         } catch (t: Throwable) {
             logError("[ERROR] Failed to hook Gboard's clipboard content provider.", t)
@@ -161,6 +233,7 @@ class GboardHook : BaseDynamicHook() {
                     chain.proceed()
                 }
             })
+            flagsHookInstalled = true
             logInfo("[SUCCESS] Gboard clipboard feature-flag hook installed.")
         } catch (t: Throwable) {
             logError("[ERROR] Failed to hook Gboard's clipboard flag reader.", t)
@@ -173,26 +246,31 @@ class GboardHook : BaseDynamicHook() {
                 chain.proceed()
                 retentionDurationMillis
             })
+            retentionHookInstalled = true
             logInfo("[SUCCESS] Gboard clipboard retention hook installed.")
         } catch (t: Throwable) {
             logError("[ERROR] Failed to hook Gboard's clipboard retention method.", t)
         }
     }
 
-    /** The reference hook uses this set-size workaround for Gboard's desugared Instant set. */
+    /** Translate the configured capacity to Gboard's built-in five-entry size threshold. */
     private fun hookClipboardTimestampSetSize() {
         try {
             val sizeMethod = HashSet::class.java.getDeclaredMethod("size")
             registerHook(xposedModule.hook(sizeMethod).intercept { chain ->
+                // Use the original size instead of reflecting into Android's HashSet backing map.
+                val actualSize = chain.proceed() as Int
                 val set = chain.thisObject as? HashSet<*>
                 val firstElement = set?.firstOrNull()
-                val backingMap = set?.let { readField(it, "map") as? Map<*, *> }
-                if (firstElement?.javaClass?.name == "j$.time.Instant" &&
-                    backingMap != null && backingMap.size <= clipboardLimit
-                ) {
-                    5
+                if (firstElement?.javaClass?.name == "j$.time.Instant") {
+                    val reportedSize = clipboardTimestampSize(actualSize, clipboardLimit)
+                    val logged = if (actualSize > clipboardLimit) overCapacityLogged else withinCapacityLogged
+                    if (logsEnabled && logged.compareAndSet(false, true)) {
+                        logInfo("[CAPACITY] actualSize=$actualSize, configuredLimit=$clipboardLimit, reportedSize=$reportedSize.")
+                    }
+                    reportedSize
                 } else {
-                    chain.proceed()
+                    actualSize
                 }
             })
             logInfo("[SUCCESS] Gboard clipboard timestamp-set compatibility hook installed.")
@@ -201,13 +279,33 @@ class GboardHook : BaseDynamicHook() {
         }
     }
 
-    private fun timestampArgumentIndex(selection: String): Int {
-        val markerIndex = selection.indexOf(TIMESTAMP_FILTER, ignoreCase = true)
-        if (markerIndex < 0) return -1
-        return selection.substring(0, markerIndex).count { it == '?' }
+    internal fun clipboardTimestampSize(actualSize: Int, limit: Int): Int = when {
+        actualSize == 0 -> 0
+        actualSize <= limit -> 5
+        // Returning the real size (2..5) here leaves Gboard below its overflow threshold,
+        // even when a user-selected limit of 1..4 has already been exceeded.
+        else -> maxOf(6, actualSize)
     }
 
-    private fun resolveMethod(classLoader: ClassLoader, serialized: String): Method? {
+    /** Mutate only clipboard query arguments, preserving the caller's selection array. */
+    internal fun rewriteClipboardQuery(args: Array<Any?>, limit: Int, retentionMillis: Long, now: Long) {
+        val selection = args.getOrNull(2) as? String
+        val selectionArgs = args.getOrNull(3) as? Array<*>
+        val marker = selection?.let { timestampFilter.find(it) }
+        if (marker != null && selectionArgs != null) {
+            val index = selection.take(marker.range.first).count { it == '?' }
+            if (index in selectionArgs.indices) {
+                val updated = Array(selectionArgs.size) { selectionArgs[it] as? String }
+                updated[index] = (now - retentionMillis).toString()
+                args[3] = updated
+            }
+        }
+        if ((args.getOrNull(4) as? String)?.trim()?.equals("timestamp DESC limit 5", ignoreCase = true) == true) {
+            args[4] = "timestamp DESC limit ${limit.coerceIn(1, MAX_CLIPBOARD_LIMIT)}"
+        }
+    }
+
+    internal fun resolveMethod(classLoader: ClassLoader, serialized: String): Method? {
         return try {
             val dexMethod = DexMethod(serialized)
             val parameterTypes = mutableListOf<Class<*>>()

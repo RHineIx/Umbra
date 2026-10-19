@@ -1,5 +1,6 @@
 plugins {
     alias(libs.plugins.android.application)
+    alias(libs.plugins.kotlin.compose)
 }
 
 android {
@@ -58,6 +59,7 @@ android {
     }
 
     buildFeatures {
+        compose = true
         viewBinding = false
         dataBinding = false
     }
@@ -80,14 +82,22 @@ android {
 
 dependencies {
     implementation(libs.androidx.core.ktx)
+    // Preserve the original runtime dependencies used by hooks in target apps.
     implementation(libs.androidx.appcompat)
     implementation(libs.material)
     implementation(libs.androidx.constraintlayout)
+    implementation(platform(libs.androidx.compose.bom))
+    implementation(libs.androidx.compose.ui)
+    implementation(libs.androidx.compose.material3)
+    implementation(libs.androidx.compose.animation)
+    implementation(libs.androidx.compose.ui.tooling.preview)
+    debugImplementation(libs.androidx.compose.ui.tooling)
+    implementation(libs.androidx.activity.compose)
+    implementation(libs.androidx.lifecycle.runtime.compose)
 
     // Lifecycle, ViewModel, and Activity KTX for Clean Architecture
     implementation(libs.androidx.lifecycle.viewmodel.ktx)
     implementation(libs.androidx.lifecycle.runtime.ktx)
-    implementation(libs.androidx.activity.ktx)
 
     compileOnly(libs.libxposed.api)
     implementation(libs.libxposed.service)
