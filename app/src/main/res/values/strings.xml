@@ -12,8 +12,14 @@
     <string name="desc_gboard_features">Clipboard limit and retention.</string>
     <string name="gboard_customize_hint">Customize Gboard clipboard</string>
     <string name="gboard_settings_title">Gboard clipboard limits</string>
-    <string name="gboard_clipboard_limit_label">Maximum clipboard entries</string>
-    <string name="gboard_retention_days_label">Keep entries for (days)</string>
+    <string name="gboard_clipboard_limit_label">Maximum entries</string>
+    <string name="gboard_retention_days_label">Retention period</string>
+    <string name="gboard_settings_description">Choose how many entries to keep and when they expire.</string>
+    <string name="gboard_entries_unit">entries</string>
+    <string name="gboard_days_unit">days</string>
+    <string name="gboard_limit_range">From 1 to 1000 entries</string>
+    <string name="gboard_days_range">From 1 to 3650 days</string>
+    <string name="gboard_restart_note">Force-stop Gboard after saving to apply your changes.</string>
     <string name="gboard_limit_invalid">Enter a value from 1 to 1000.</string>
     <string name="gboard_days_invalid">Enter a value from 1 to 3650.</string>
     <string name="action_save">Save</string>

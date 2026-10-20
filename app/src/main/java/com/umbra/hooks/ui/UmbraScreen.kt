@@ -14,6 +14,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -24,6 +25,8 @@ import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.layout.Layout
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.focus.FocusDirection
 import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.constrainHeight
 import androidx.compose.ui.zIndex
@@ -45,6 +48,10 @@ import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.ui.text.withStyle
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
@@ -78,7 +85,18 @@ fun UmbraScreen(
             Modifier.fillMaxSize().safeDrawingPadding().verticalScroll(rememberScrollState()).padding(24.dp)
         ) {
             Column(Modifier.padding(vertical = 24.dp)) {
-                Text(stringResource(R.string.app_name), style = MaterialTheme.typography.displaySmall, fontWeight = FontWeight.Bold)
+                val appName = stringResource(R.string.app_name)
+                val titleAccent = MaterialTheme.colorScheme.primary
+                Text(
+                    buildAnnotatedString {
+                        withStyle(SpanStyle(color = titleAccent)) {
+                            append(appName.take(1))
+                        }
+                        append(appName.drop(1))
+                    },
+                    style = MaterialTheme.typography.displaySmall,
+                    fontWeight = FontWeight.Black,
+                )
                 Text(stringResource(R.string.title_lsposed_module), style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
@@ -271,29 +289,86 @@ internal fun ClipboardSettingsDialog(initialLimit: Int, initialDays: Int, onDism
     var submitted by rememberSaveable { mutableStateOf(false) }
     val invalidLimit = submitted && limit.toIntOrNull()?.let { it in 1..1000 } != true
     val invalidDays = submitted && days.toIntOrNull()?.let { it in 1..3650 } != true
+    val focusManager = LocalFocusManager.current
+    val save = {
+        submitted = true
+        val parsedLimit = limit.toIntOrNull()
+        val parsedDays = days.toIntOrNull()
+        if (parsedLimit != null && parsedLimit in 1..1000 && parsedDays != null && parsedDays in 1..3650) {
+            focusManager.clearFocus()
+            onSave(parsedLimit, parsedDays)
+        }
+    }
+    val fieldColors = OutlinedTextFieldDefaults.colors(
+        focusedContainerColor = MaterialTheme.colorScheme.surfaceColorAtElevation(1.dp),
+        unfocusedContainerColor = MaterialTheme.colorScheme.surfaceColorAtElevation(1.dp),
+    )
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text(stringResource(R.string.gboard_settings_title)) },
+        shape = RoundedCornerShape(28.dp),
+        containerColor = MaterialTheme.colorScheme.surfaceColorAtElevation(6.dp),
+        title = {
+            Row(horizontalArrangement = Arrangement.spacedBy(16.dp), verticalAlignment = Alignment.CenterVertically) {
+                Surface(
+                    modifier = Modifier.size(48.dp),
+                    shape = RoundedCornerShape(16.dp),
+                    color = MaterialTheme.colorScheme.primaryContainer,
+                    contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
+                ) {
+                    Box(contentAlignment = Alignment.Center) {
+                        Icon(painterResource(R.drawable.ic_clipboard), contentDescription = null, modifier = Modifier.size(26.dp))
+                    }
+                }
+                Text(stringResource(R.string.gboard_settings_title), modifier = Modifier.weight(1f),
+                    style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
+            }
+        },
         text = {
-            Column(Modifier.verticalScroll(rememberScrollState()).imePadding(), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                OutlinedTextField(limit, { limit = it }, Modifier.fillMaxWidth(),
-                    label = { Text(stringResource(R.string.gboard_clipboard_limit_label)) },
-                    singleLine = true, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                    isError = invalidLimit, supportingText = { if (invalidLimit) Text(stringResource(R.string.gboard_limit_invalid)) })
-                OutlinedTextField(days, { days = it }, Modifier.fillMaxWidth(),
-                    label = { Text(stringResource(R.string.gboard_retention_days_label)) },
-                    singleLine = true, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                    isError = invalidDays, supportingText = { if (invalidDays) Text(stringResource(R.string.gboard_days_invalid)) })
+            Column(Modifier.verticalScroll(rememberScrollState()).imePadding(), verticalArrangement = Arrangement.spacedBy(20.dp)) {
+                Text(stringResource(R.string.gboard_settings_description), style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    OutlinedTextField(
+                        value = limit,
+                        onValueChange = { limit = it },
+                        modifier = Modifier.fillMaxWidth(),
+                        label = { Text(stringResource(R.string.gboard_clipboard_limit_label)) },
+                        suffix = { Text(stringResource(R.string.gboard_entries_unit)) },
+                        shape = RoundedCornerShape(14.dp),
+                        colors = fieldColors,
+                        singleLine = true,
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number, imeAction = ImeAction.Next),
+                        keyboardActions = KeyboardActions(onNext = { focusManager.moveFocus(FocusDirection.Down) }),
+                        isError = invalidLimit,
+                        supportingText = { Text(stringResource(if (invalidLimit) R.string.gboard_limit_invalid else R.string.gboard_limit_range)) },
+                    )
+                    OutlinedTextField(
+                        value = days,
+                        onValueChange = { days = it },
+                        modifier = Modifier.fillMaxWidth(),
+                        label = { Text(stringResource(R.string.gboard_retention_days_label)) },
+                        suffix = { Text(stringResource(R.string.gboard_days_unit)) },
+                        shape = RoundedCornerShape(14.dp),
+                        colors = fieldColors,
+                        singleLine = true,
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number, imeAction = ImeAction.Done),
+                        keyboardActions = KeyboardActions(onDone = { save() }),
+                        isError = invalidDays,
+                        supportingText = { Text(stringResource(if (invalidDays) R.string.gboard_days_invalid else R.string.gboard_days_range)) },
+                    )
+                }
+                Surface(shape = RoundedCornerShape(14.dp), color = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = .45f)) {
+                    Text(stringResource(R.string.gboard_restart_note), modifier = Modifier.padding(14.dp),
+                        style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
             }
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text(stringResource(android.R.string.cancel)) } },
         confirmButton = {
-            TextButton(onClick = {
-                submitted = true
-                val parsedLimit = limit.toIntOrNull()
-                val parsedDays = days.toIntOrNull()
-                if (parsedLimit != null && parsedLimit in 1..1000 && parsedDays != null && parsedDays in 1..3650) onSave(parsedLimit, parsedDays)
-            }) { Text(stringResource(R.string.action_save)) }
+            Button(onClick = save, shape = RoundedCornerShape(14.dp),
+                contentPadding = PaddingValues(horizontal = 24.dp, vertical = 12.dp)) {
+                Text(stringResource(R.string.action_save), fontWeight = FontWeight.SemiBold)
+            }
         }
     )
 }
