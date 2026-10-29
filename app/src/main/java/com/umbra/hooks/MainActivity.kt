@@ -87,6 +87,8 @@ class MainActivity : ComponentActivity() {
                             SpacebarSettings(
                                 enabled = PrefsManager.getInt(service, Constants.KEY_GBOARD_SPACEBAR_ENABLED, 0) == 1,
                                 icon = SpacebarIcon.fromId(PrefsManager.getInt(service, Constants.KEY_GBOARD_SPACEBAR_ICON, SpacebarIcon.GOOGLE.id)),
+                                customImage = PrefsManager.getString(service, Constants.KEY_GBOARD_SPACEBAR_CUSTOM_IMAGE),
+                                customTint = PrefsManager.getInt(service, Constants.KEY_GBOARD_SPACEBAR_CUSTOM_TINT, 0) == 1,
                             )
                         }
                     },

@@ -78,6 +78,8 @@ fun UmbraScreen(
     var editingSpacebar by rememberSaveable { mutableStateOf(false) }
     var initialSpacebarEnabled by rememberSaveable { mutableStateOf(false) }
     var initialSpacebarIcon by rememberSaveable { mutableIntStateOf(SpacebarIcon.GOOGLE.id) }
+    var initialSpacebarCustomImage by rememberSaveable { mutableStateOf<String?>(null) }
+    var initialSpacebarCustomTint by rememberSaveable { mutableStateOf(false) }
     val expansion = remember { Animatable(if (expanded) 1f else 0f) }
     LaunchedEffect(expanded) {
         val target = if (expanded) 1f else 0f
@@ -141,6 +143,8 @@ fun UmbraScreen(
                         readSpacebarSettings()?.let { settings ->
                             initialSpacebarEnabled = settings.enabled
                             initialSpacebarIcon = settings.icon.id
+                            initialSpacebarCustomImage = settings.customImage
+                            initialSpacebarCustomTint = settings.customTint
                             editingSpacebar = true
                         }
                     },
@@ -156,7 +160,8 @@ fun UmbraScreen(
     }
     if (editingSpacebar) {
         SpacebarSettingsDialog(
-            initial = SpacebarSettings(initialSpacebarEnabled, SpacebarIcon.fromId(initialSpacebarIcon)),
+            initial = SpacebarSettings(initialSpacebarEnabled, SpacebarIcon.fromId(initialSpacebarIcon),
+                initialSpacebarCustomImage, initialSpacebarCustomTint),
             onDismiss = { editingSpacebar = false },
             onSave = { if (saveSpacebarSettings(it)) editingSpacebar = false },
         )

@@ -52,14 +52,27 @@ object PrefsManager {
     fun putGboardSpacebarSettings(service: XposedService?, settings: SpacebarSettings): Boolean {
         if (service == null) return false
         return try {
-            service.getRemotePreferences(Constants.PREFS_FILE).edit()
+            val editor = service.getRemotePreferences(Constants.PREFS_FILE).edit()
                 .putInt(Constants.KEY_GBOARD_SPACEBAR_ENABLED, if (settings.enabled) 1 else 0)
                 .putInt(Constants.KEY_GBOARD_SPACEBAR_ICON, settings.icon.id)
-                .apply()
+                .putInt(Constants.KEY_GBOARD_SPACEBAR_CUSTOM_TINT, if (settings.customTint) 1 else 0)
+            if (settings.customImage != null) editor.putString(Constants.KEY_GBOARD_SPACEBAR_CUSTOM_IMAGE, settings.customImage)
+            else editor.remove(Constants.KEY_GBOARD_SPACEBAR_CUSTOM_IMAGE)
+            editor.apply()
             true
         } catch (e: Throwable) {
             Log.e(TAG, "Failed to write Gboard spacebar settings.", e)
             false
+        }
+    }
+
+    fun getString(service: XposedService?, key: String): String? {
+        if (service == null) return null
+        return try {
+            service.getRemotePreferences(Constants.PREFS_FILE).getString(key, null)
+        } catch (e: Throwable) {
+            Log.e(TAG, "Failed to read string from remote prefs. Key: $key", e)
+            null
         }
     }
 

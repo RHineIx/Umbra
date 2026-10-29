@@ -11,6 +11,7 @@ import android.view.View
 import android.view.ViewGroup
 import android.widget.TextView
 import com.umbra.hooks.utils.Constants
+import com.umbra.hooks.utils.CustomSpacebarIcon
 import com.umbra.hooks.utils.PrefsManager
 import com.umbra.hooks.utils.SpacebarIcon
 import com.umbra.hooks.utils.SpacebarIconRenderer
@@ -32,7 +33,17 @@ internal class GboardSpacebarHook(private val module: XposedModule, private val 
         if (PrefsManager.getHookInt(module, Constants.KEY_GBOARD_SPACEBAR_ENABLED, 0) != 1) return null
         return try {
             val icon = SpacebarIcon.fromId(PrefsManager.getHookInt(module, Constants.KEY_GBOARD_SPACEBAR_ICON, SpacebarIcon.GOOGLE.id))
-            val renderer = SpacebarIconRenderer(icon)
+            val customBitmap = if (icon == SpacebarIcon.CUSTOM) {
+                val image = module.getRemotePreferences(Constants.PREFS_FILE)
+                    .getString(Constants.KEY_GBOARD_SPACEBAR_CUSTOM_IMAGE, null)
+                CustomSpacebarIcon.decodeStored(image) ?: run {
+                    log("[WARN] Custom icon is unavailable; leaving the original spacebar unchanged.")
+                    return null
+                }
+            } else null
+            val customTint = icon == SpacebarIcon.CUSTOM &&
+                PrefsManager.getHookInt(module, Constants.KEY_GBOARD_SPACEBAR_CUSTOM_TINT, 0) == 1
+            val renderer = SpacebarIconRenderer(icon, customBitmap, customTint)
             val draw = View::class.java.getDeclaredMethod("draw", Canvas::class.java)
             val handle = module.hook(draw).intercept { chain ->
                 val view = chain.thisObject as? View

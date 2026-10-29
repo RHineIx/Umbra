@@ -11,6 +11,7 @@ libxposed-service = "102.0.0"
 lifecycle = "2.11.0"
 activity = "1.13.0"
 composeBom = "2026.09.00"
+androidsvg = "1.4"
 
 [plugins]
 kotlin-compose = { id = "org.jetbrains.kotlin.plugin.compose", version.ref = "kotlin" }
@@ -28,6 +29,7 @@ androidx-compose-ui-tooling-preview = { group = "androidx.compose.ui", name = "u
 androidx-compose-ui-tooling = { group = "androidx.compose.ui", name = "ui-tooling" }
 androidx-activity-compose = { group = "androidx.activity", name = "activity-compose", version.ref = "activity" }
 androidx-lifecycle-runtime-compose = { group = "androidx.lifecycle", name = "lifecycle-runtime-compose", version.ref = "lifecycle" }
+androidsvg = { group = "com.caverock", name = "androidsvg-aar", version.ref = "androidsvg" }
 
 androidx-core-ktx = { group = "androidx.core", name = "core-ktx", version.ref = "coreKtx" }
 dexkit = { group = "org.luckypray", name = "dexkit", version.ref = "dexkit" }

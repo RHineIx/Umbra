@@ -94,6 +94,7 @@ dependencies {
     debugImplementation(libs.androidx.compose.ui.tooling)
     implementation(libs.androidx.activity.compose)
     implementation(libs.androidx.lifecycle.runtime.compose)
+    implementation(libs.androidsvg)
 
     // Lifecycle, ViewModel, and Activity KTX for Clean Architecture
     implementation(libs.androidx.lifecycle.viewmodel.ktx)
