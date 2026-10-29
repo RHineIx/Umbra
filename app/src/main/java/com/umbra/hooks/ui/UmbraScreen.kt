@@ -414,5 +414,5 @@ internal fun ClipboardSettingsDialog(initialLimit: Int, initialDays: Int, onDism
 @Preview(showBackground = true)
 @Composable
 private fun InactivePreview() {
-    UmbraTheme { UmbraScreen(MainViewModel.UiState(), "3.6.0", {}, {}, {}, { 10 to 3 }, { _, _ -> true }) }
+    UmbraTheme { UmbraScreen(MainViewModel.UiState(), "3.7.1", {}, {}, {}, { 10 to 3 }, { _, _ -> true }) }
 }
