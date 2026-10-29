@@ -190,6 +190,7 @@ class GboardHook : BaseDynamicHook() {
     override fun onPackageLoaded(classLoader: ClassLoader) {
         hookClipboardProvider(classLoader)
         hookClipboardTimestampSetSize()
+        GboardSpacebarHook(xposedModule, logsEnabled).install()?.let(::registerHook)
     }
 
     private fun hookClipboardProvider(classLoader: ClassLoader) {

@@ -56,6 +56,8 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import com.umbra.hooks.R
+import com.umbra.hooks.utils.SpacebarIcon
+import com.umbra.hooks.utils.SpacebarSettings
 
 @Composable
 fun UmbraScreen(
@@ -66,11 +68,16 @@ fun UmbraScreen(
     onDeveloperClick: () -> Unit,
     readClipboardSettings: () -> Pair<Int, Int>?,
     saveClipboardSettings: (Int, Int) -> Boolean,
+    readSpacebarSettings: () -> SpacebarSettings? = { null },
+    saveSpacebarSettings: (SpacebarSettings) -> Boolean = { false },
 ) {
     var expanded by rememberSaveable { mutableStateOf(false) }
     var editing by rememberSaveable { mutableStateOf(false) }
     var initialLimit by rememberSaveable { mutableIntStateOf(10) }
     var initialDays by rememberSaveable { mutableIntStateOf(3) }
+    var editingSpacebar by rememberSaveable { mutableStateOf(false) }
+    var initialSpacebarEnabled by rememberSaveable { mutableStateOf(false) }
+    var initialSpacebarIcon by rememberSaveable { mutableIntStateOf(SpacebarIcon.GOOGLE.id) }
     val expansion = remember { Animatable(if (expanded) 1f else 0f) }
     LaunchedEffect(expanded) {
         val target = if (expanded) 1f else 0f
@@ -121,13 +128,23 @@ fun UmbraScreen(
             }
             Spacer(Modifier.height(16.dp))
             HookRegistry.getHooks().forEach { hook ->
-                HookCard(hook) {
-                    readClipboardSettings()?.let { (limit, days) ->
-                        initialLimit = limit
-                        initialDays = days
-                        editing = true
-                    }
-                }
+                HookCard(
+                    hook,
+                    onClick = {
+                        readClipboardSettings()?.let { (limit, days) ->
+                            initialLimit = limit
+                            initialDays = days
+                            editing = true
+                        }
+                    },
+                    onSpacebarClick = {
+                        readSpacebarSettings()?.let { settings ->
+                            initialSpacebarEnabled = settings.enabled
+                            initialSpacebarIcon = settings.icon.id
+                            editingSpacebar = true
+                        }
+                    },
+                )
                 Spacer(Modifier.height(16.dp))
             }
         }
@@ -136,6 +153,13 @@ fun UmbraScreen(
         ClipboardSettingsDialog(initialLimit, initialDays, { editing = false }) { limit, days ->
             if (saveClipboardSettings(limit, days)) editing = false
         }
+    }
+    if (editingSpacebar) {
+        SpacebarSettingsDialog(
+            initial = SpacebarSettings(initialSpacebarEnabled, SpacebarIcon.fromId(initialSpacebarIcon)),
+            onDismiss = { editingSpacebar = false },
+            onSave = { if (saveSpacebarSettings(it)) editingSpacebar = false },
+        )
     }
 }
 
@@ -261,7 +285,7 @@ private fun SettingRow(title: Int, description: Int, checked: Boolean, enabled: 
 }
 
 @Composable
-private fun HookCard(hook: HookItem, onClick: () -> Unit) {
+private fun HookCard(hook: HookItem, onClick: () -> Unit, onSpacebarClick: () -> Unit) {
     val hint = stringResource(R.string.gboard_customize_hint)
     Card(
         Modifier.fillMaxWidth().then(if (hook.settingsAvailable) Modifier.clickable(role = Role.Button, onClickLabel = hint, onClick = onClick) else Modifier),
@@ -278,6 +302,15 @@ private fun HookCard(hook: HookItem, onClick: () -> Unit) {
             }
             Text(stringResource(hook.descriptionResId), Modifier.padding(top = 8.dp),
                 style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            if (hook.settingsAvailable) {
+                HorizontalDivider(Modifier.padding(top = 16.dp), color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = .6f))
+                TextButton(onClick = onSpacebarClick, modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
+                    shape = RoundedCornerShape(12.dp), contentPadding = PaddingValues(vertical = 8.dp)) {
+                    Icon(painterResource(R.drawable.ic_spacebar), contentDescription = null, modifier = Modifier.size(22.dp))
+                    Text(stringResource(R.string.spacebar_icon_title), modifier = Modifier.weight(1f).padding(horizontal = 12.dp))
+                    Icon(painterResource(R.drawable.ic_chevron_right), contentDescription = null, modifier = Modifier.size(20.dp))
+                }
+            }
         }
     }
 }
@@ -376,5 +409,5 @@ internal fun ClipboardSettingsDialog(initialLimit: Int, initialDays: Int, onDism
 @Preview(showBackground = true)
 @Composable
 private fun InactivePreview() {
-    UmbraTheme { UmbraScreen(MainViewModel.UiState(), "3.2.0", {}, {}, {}, { 10 to 3 }, { _, _ -> true }) }
+    UmbraTheme { UmbraScreen(MainViewModel.UiState(), "3.6.0", {}, {}, {}, { 10 to 3 }, { _, _ -> true }) }
 }

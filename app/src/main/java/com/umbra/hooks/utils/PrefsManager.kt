@@ -49,6 +49,20 @@ object PrefsManager {
         }
     }
 
+    fun putGboardSpacebarSettings(service: XposedService?, settings: SpacebarSettings): Boolean {
+        if (service == null) return false
+        return try {
+            service.getRemotePreferences(Constants.PREFS_FILE).edit()
+                .putInt(Constants.KEY_GBOARD_SPACEBAR_ENABLED, if (settings.enabled) 1 else 0)
+                .putInt(Constants.KEY_GBOARD_SPACEBAR_ICON, settings.icon.id)
+                .apply()
+            true
+        } catch (e: Throwable) {
+            Log.e(TAG, "Failed to write Gboard spacebar settings.", e)
+            false
+        }
+    }
+
     fun getHookInt(module: XposedModule, key: String, defValue: Int): Int {
         return try {
             val prefs = module.getRemotePreferences(Constants.PREFS_FILE)

@@ -17,6 +17,8 @@ import com.umbra.hooks.ui.UmbraScreen
 import com.umbra.hooks.ui.UmbraTheme
 import com.umbra.hooks.utils.Constants
 import com.umbra.hooks.utils.PrefsManager
+import com.umbra.hooks.utils.SpacebarIcon
+import com.umbra.hooks.utils.SpacebarSettings
 import io.github.libxposed.service.XposedService
 import io.github.libxposed.service.XposedServiceHelper
 import java.lang.ref.WeakReference
@@ -74,16 +76,23 @@ class MainActivity : ComponentActivity() {
                         }
                     },
                     saveClipboardSettings = { limit, days ->
-                        val saved = PrefsManager.putGboardClipboardSettings(xposedService, limit, days)
-                        if (saved) {
-                            toast(R.string.toast_gboard_saved_force_stop)
-                            runCatching {
-                                startActivity(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
-                                    Uri.fromParts("package", "com.google.android.inputmethod.latin", null)))
-                            }.onFailure { toast(R.string.toast_gboard_settings_unavailable) }
-                        } else toast(R.string.toast_settings_failed)
-                        saved
-                    }
+                        handleGboardSettingsSaved(PrefsManager.putGboardClipboardSettings(xposedService, limit, days))
+                    },
+                    readSpacebarSettings = {
+                        val service = xposedService
+                        if (service == null) {
+                            toast(R.string.toast_service_disconnected)
+                            null
+                        } else {
+                            SpacebarSettings(
+                                enabled = PrefsManager.getInt(service, Constants.KEY_GBOARD_SPACEBAR_ENABLED, 0) == 1,
+                                icon = SpacebarIcon.fromId(PrefsManager.getInt(service, Constants.KEY_GBOARD_SPACEBAR_ICON, SpacebarIcon.GOOGLE.id)),
+                            )
+                        }
+                    },
+                    saveSpacebarSettings = { settings ->
+                        handleGboardSettingsSaved(PrefsManager.putGboardSpacebarSettings(xposedService, settings))
+                    },
                 )
             }
         }
@@ -121,6 +130,17 @@ class MainActivity : ComponentActivity() {
             viewModel.updateIconState(hide)
             if (hide) toast(R.string.toast_icon_hidden)
         }.onFailure { toast(R.string.toast_settings_failed) }
+    }
+
+    private fun handleGboardSettingsSaved(saved: Boolean): Boolean {
+        if (saved) {
+            toast(R.string.toast_gboard_saved_force_stop)
+            runCatching {
+                startActivity(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
+                    Uri.fromParts("package", "com.google.android.inputmethod.latin", null)))
+            }.onFailure { toast(R.string.toast_gboard_settings_unavailable) }
+        } else toast(R.string.toast_settings_failed)
+        return saved
     }
 
     private fun toast(message: Int) = Toast.makeText(this, message, Toast.LENGTH_LONG).show()
