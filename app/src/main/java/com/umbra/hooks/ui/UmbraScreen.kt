@@ -6,6 +6,7 @@ import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.CubicBezierEasing
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.clickable
@@ -87,11 +88,21 @@ fun UmbraScreen(
         val duration = (400 * abs(target - expansion.value)).toInt().coerceAtLeast(50)
         expansion.animateTo(target, tween(duration, easing = CubicBezierEasing(.3f, 0f, .1f, 1f)))
     }
+    val homeScrollState = rememberScrollState()
     val fraction = expansion.value
     val progress = remember(expansion) { { expansion.value } }
+    if (editingSpacebar) {
+        SpacebarSettingsScreen(
+            initial = SpacebarSettings(initialSpacebarEnabled, SpacebarIcon.fromId(initialSpacebarIcon),
+                initialSpacebarCustomImage, initialSpacebarCustomTint),
+            onDismiss = { editingSpacebar = false },
+            onSave = { if (saveSpacebarSettings(it)) editingSpacebar = false },
+        )
+        return
+    }
     Surface(color = MaterialTheme.colorScheme.background) {
         Column(
-            Modifier.fillMaxSize().safeDrawingPadding().verticalScroll(rememberScrollState()).padding(24.dp)
+            Modifier.fillMaxSize().safeDrawingPadding().verticalScroll(homeScrollState).padding(24.dp)
         ) {
             Column(Modifier.padding(vertical = 24.dp)) {
                 val appName = stringResource(R.string.app_name)
@@ -154,17 +165,9 @@ fun UmbraScreen(
         }
     }
     if (editing) {
-        ClipboardSettingsDialog(initialLimit, initialDays, { editing = false }) { limit, days ->
+        ClipboardSettingsSheet(initialLimit, initialDays, { editing = false }) { limit, days ->
             if (saveClipboardSettings(limit, days)) editing = false
         }
-    }
-    if (editingSpacebar) {
-        SpacebarSettingsDialog(
-            initial = SpacebarSettings(initialSpacebarEnabled, SpacebarIcon.fromId(initialSpacebarIcon),
-                initialSpacebarCustomImage, initialSpacebarCustomTint),
-            onDismiss = { editingSpacebar = false },
-            onSave = { if (saveSpacebarSettings(it)) editingSpacebar = false },
-        )
     }
 }
 
@@ -291,9 +294,12 @@ private fun SettingRow(title: Int, description: Int, checked: Boolean, enabled: 
 
 @Composable
 private fun HookCard(hook: HookItem, onClick: () -> Unit, onSpacebarClick: () -> Unit) {
-    val hint = stringResource(R.string.gboard_customize_hint)
+    if (hook.settingsAvailable) {
+        GboardCard(onClick, onSpacebarClick)
+        return
+    }
     Card(
-        Modifier.fillMaxWidth().then(if (hook.settingsAvailable) Modifier.clickable(role = Role.Button, onClickLabel = hint, onClick = onClick) else Modifier),
+        Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(20.dp),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceColorAtElevation(2.dp)),
         border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
@@ -302,26 +308,63 @@ private fun HookCard(hook: HookItem, onClick: () -> Unit, onSpacebarClick: () ->
         Column(Modifier.padding(24.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(stringResource(hook.titleResId), Modifier.weight(1f), style = MaterialTheme.typography.titleLarge)
-                if (hook.settingsAvailable) Icon(painterResource(R.drawable.ic_chevron_right), contentDescription = null,
-                    Modifier.size(24.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
             }
             Text(stringResource(hook.descriptionResId), Modifier.padding(top = 8.dp),
                 style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            if (hook.settingsAvailable) {
-                HorizontalDivider(Modifier.padding(top = 16.dp), color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = .6f))
-                TextButton(onClick = onSpacebarClick, modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
-                    shape = RoundedCornerShape(12.dp), contentPadding = PaddingValues(vertical = 8.dp)) {
-                    Icon(painterResource(R.drawable.ic_spacebar), contentDescription = null, modifier = Modifier.size(22.dp))
-                    Text(stringResource(R.string.spacebar_icon_title), modifier = Modifier.weight(1f).padding(horizontal = 12.dp))
-                    Icon(painterResource(R.drawable.ic_chevron_right), contentDescription = null, modifier = Modifier.size(20.dp))
-                }
-            }
         }
     }
 }
 
 @Composable
-internal fun ClipboardSettingsDialog(initialLimit: Int, initialDays: Int, onDismiss: () -> Unit, onSave: (Int, Int) -> Unit) {
+private fun GboardCard(onClipboardClick: () -> Unit, onSpacebarClick: () -> Unit) {
+    val colors = MaterialTheme.colorScheme
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(24.dp),
+        colors = CardDefaults.cardColors(containerColor = colors.surfaceContainerLow),
+        border = BorderStroke(1.dp, colors.outlineVariant),
+    ) {
+        Row(Modifier.padding(20.dp), horizontalArrangement = Arrangement.spacedBy(14.dp),
+            verticalAlignment = Alignment.CenterVertically) {
+            Image(painterResource(R.drawable.ic_gboard_logo), contentDescription = null,
+                modifier = Modifier.size(44.dp))
+            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Text(stringResource(R.string.title_gboard), style = MaterialTheme.typography.titleLarge,
+                    fontWeight = FontWeight.SemiBold)
+                Text(stringResource(R.string.gboard_card_description), style = MaterialTheme.typography.bodySmall,
+                    color = colors.onSurfaceVariant)
+            }
+        }
+        Column(Modifier.padding(start = 12.dp, end = 12.dp, bottom = 12.dp),
+            verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            GboardActionRow(R.drawable.ic_clipboard, R.string.gboard_clipboard_title,
+                R.string.desc_gboard_features, onClipboardClick)
+            GboardActionRow(R.drawable.ic_spacebar, R.string.spacebar_icon_title,
+                R.string.gboard_spacebar_summary, onSpacebarClick)
+        }
+    }
+}
+
+@Composable
+private fun GboardActionRow(icon: Int, title: Int, description: Int, onClick: () -> Unit) {
+    val colors = MaterialTheme.colorScheme
+    Surface(onClick = onClick, shape = RoundedCornerShape(16.dp), color = colors.surfaceContainerHigh) {
+        Row(Modifier.fillMaxWidth().padding(14.dp), verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            Icon(painterResource(icon), contentDescription = null, modifier = Modifier.size(22.dp), tint = colors.primary)
+            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                Text(stringResource(title), style = MaterialTheme.typography.titleSmall)
+                Text(stringResource(description), style = MaterialTheme.typography.bodySmall, color = colors.onSurfaceVariant)
+            }
+            Icon(painterResource(R.drawable.ic_chevron_right), contentDescription = null,
+                modifier = Modifier.size(20.dp), tint = colors.onSurfaceVariant)
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+internal fun ClipboardSettingsSheet(initialLimit: Int, initialDays: Int, onDismiss: () -> Unit, onSave: (Int, Int) -> Unit) {
     var limit by rememberSaveable { mutableStateOf(initialLimit.toString()) }
     var days by rememberSaveable { mutableStateOf(initialDays.toString()) }
     var submitted by rememberSaveable { mutableStateOf(false) }
@@ -341,74 +384,46 @@ internal fun ClipboardSettingsDialog(initialLimit: Int, initialDays: Int, onDism
         focusedContainerColor = MaterialTheme.colorScheme.surfaceColorAtElevation(1.dp),
         unfocusedContainerColor = MaterialTheme.colorScheme.surfaceColorAtElevation(1.dp),
     )
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        shape = RoundedCornerShape(28.dp),
-        containerColor = MaterialTheme.colorScheme.surfaceColorAtElevation(6.dp),
-        title = {
-            Row(horizontalArrangement = Arrangement.spacedBy(16.dp), verticalAlignment = Alignment.CenterVertically) {
-                Surface(
-                    modifier = Modifier.size(48.dp),
-                    shape = RoundedCornerShape(16.dp),
-                    color = MaterialTheme.colorScheme.primaryContainer,
-                    contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
-                ) {
-                    Box(contentAlignment = Alignment.Center) {
-                        Icon(painterResource(R.drawable.ic_clipboard), contentDescription = null, modifier = Modifier.size(26.dp))
-                    }
-                }
-                Text(stringResource(R.string.gboard_settings_title), modifier = Modifier.weight(1f),
-                    style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
-            }
-        },
-        text = {
-            Column(Modifier.verticalScroll(rememberScrollState()).imePadding(), verticalArrangement = Arrangement.spacedBy(20.dp)) {
-                Text(stringResource(R.string.gboard_settings_description), style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant)
-                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                    OutlinedTextField(
-                        value = limit,
-                        onValueChange = { limit = it },
-                        modifier = Modifier.fillMaxWidth(),
-                        label = { Text(stringResource(R.string.gboard_clipboard_limit_label)) },
-                        suffix = { Text(stringResource(R.string.gboard_entries_unit)) },
-                        shape = RoundedCornerShape(14.dp),
-                        colors = fieldColors,
-                        singleLine = true,
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number, imeAction = ImeAction.Next),
-                        keyboardActions = KeyboardActions(onNext = { focusManager.moveFocus(FocusDirection.Down) }),
-                        isError = invalidLimit,
-                        supportingText = { Text(stringResource(if (invalidLimit) R.string.gboard_limit_invalid else R.string.gboard_limit_range)) },
-                    )
-                    OutlinedTextField(
-                        value = days,
-                        onValueChange = { days = it },
-                        modifier = Modifier.fillMaxWidth(),
-                        label = { Text(stringResource(R.string.gboard_retention_days_label)) },
-                        suffix = { Text(stringResource(R.string.gboard_days_unit)) },
-                        shape = RoundedCornerShape(14.dp),
-                        colors = fieldColors,
-                        singleLine = true,
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number, imeAction = ImeAction.Done),
-                        keyboardActions = KeyboardActions(onDone = { save() }),
-                        isError = invalidDays,
-                        supportingText = { Text(stringResource(if (invalidDays) R.string.gboard_days_invalid else R.string.gboard_days_range)) },
-                    )
-                }
-                Surface(shape = RoundedCornerShape(14.dp), color = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = .45f)) {
-                    Text(stringResource(R.string.gboard_restart_note), modifier = Modifier.padding(14.dp),
-                        style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                }
-            }
-        },
-        dismissButton = { TextButton(onClick = onDismiss) { Text(stringResource(android.R.string.cancel)) } },
-        confirmButton = {
-            Button(onClick = save, shape = RoundedCornerShape(14.dp),
-                contentPadding = PaddingValues(horizontal = 24.dp, vertical = 12.dp)) {
-                Text(stringResource(R.string.action_save), fontWeight = FontWeight.SemiBold)
-            }
+    GboardSettingsSheet(
+        title = stringResource(R.string.gboard_clipboard_title),
+        onDismiss = onDismiss,
+        onSave = { save() },
+    ) {
+        val sheetFocusManager = LocalFocusManager.current
+        Text(stringResource(R.string.gboard_settings_description), style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            OutlinedTextField(
+                value = limit,
+                onValueChange = { limit = it },
+                modifier = Modifier.fillMaxWidth(),
+                label = { Text(stringResource(R.string.gboard_clipboard_limit_label)) },
+                suffix = { Text(stringResource(R.string.gboard_entries_unit)) },
+                shape = RoundedCornerShape(14.dp),
+                colors = fieldColors,
+                singleLine = true,
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number, imeAction = ImeAction.Next),
+                keyboardActions = KeyboardActions(onNext = { sheetFocusManager.moveFocus(FocusDirection.Down) }),
+                isError = invalidLimit,
+                supportingText = { Text(stringResource(if (invalidLimit) R.string.gboard_limit_invalid else R.string.gboard_limit_range)) },
+            )
+            OutlinedTextField(
+                value = days,
+                onValueChange = { days = it },
+                modifier = Modifier.fillMaxWidth(),
+                label = { Text(stringResource(R.string.gboard_retention_days_label)) },
+                suffix = { Text(stringResource(R.string.gboard_days_unit)) },
+                shape = RoundedCornerShape(14.dp),
+                colors = fieldColors,
+                singleLine = true,
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number, imeAction = ImeAction.Done),
+                keyboardActions = KeyboardActions(onDone = { save() }),
+                isError = invalidDays,
+                supportingText = { Text(stringResource(if (invalidDays) R.string.gboard_days_invalid else R.string.gboard_days_range)) },
+            )
         }
-    )
+        GboardRestartNote()
+    }
 }
 
 @Preview(showBackground = true)

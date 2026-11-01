@@ -10,8 +10,12 @@
     
     <string name="title_gboard">Gboard</string>
     <string name="desc_gboard_features">Clipboard limit and retention.</string>
-    <string name="gboard_customize_hint">Customize Gboard clipboard</string>
-    <string name="gboard_settings_title">Gboard clipboard limits</string>
+    <string name="gboard_card_description">Clipboard and appearance</string>
+    <string name="gboard_clipboard_title">Clipboard</string>
+    <string name="gboard_spacebar_summary">Choose a built-in or custom icon.</string>
+    <string name="spacebar_icon_section">Choose an icon</string>
+    <string name="spacebar_icon_style">Icon style</string>
+    <string name="action_back">Back</string>
     <string name="spacebar_icon_title">Spacebar icon</string>
     <string name="spacebar_icon_enable">Show an icon</string>
     <string name="spacebar_icon_description">Replace the language label on the spacebar.</string>
@@ -29,7 +33,6 @@
     <string name="spacebar_custom_tint">Match keyboard color</string>
     <string name="spacebar_preview">Preview</string>
     <string name="spacebar_preview_language">English</string>
-    <string name="spacebar_preview_details">Centered · 22 dp · 60% opacity</string>
     <string name="spacebar_compatibility_note">Compatibility depends on your Gboard version.</string>
     <string name="gboard_clipboard_limit_label">Maximum entries</string>
     <string name="gboard_retention_days_label">Retention period</string>
