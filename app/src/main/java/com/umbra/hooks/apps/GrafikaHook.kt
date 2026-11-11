@@ -20,6 +20,10 @@ class GrafikaHook : BaseDynamicHook() {
     override val successToastMessage = "Umbra: Grafika optimized & patched. Please restart."
 
     @Volatile private var isUiTweaked = false
+    private val premiumHookLock = Any()
+    private val pendingPremiumClasses = mutableSetOf<String>()
+    private val hookedPremiumClasses = mutableSetOf<String>()
+    private var applicationInitialized = false
 
     companion object {
         private const val INTEGRITY_ACTIVITY = "com.grafika.app.integrity.AppIntegrityActivity"
@@ -75,24 +79,17 @@ class GrafikaHook : BaseDynamicHook() {
         val premiumClasses = cachePrefs.getStringSet(KEY_PREMIUM_TARGETS, emptySet()) ?: emptySet()
         val pairipClass = cachePrefs.getString(KEY_PAIRIP_TARGET, null)
 
-        var hookedPremiumMethods = 0
-        for (className in premiumClasses) {
-            try {
-                val clazz = classLoader.loadClass(className)
-                clazz.declaredMethods.forEach { m ->
-                    if (m.returnType == Boolean::class.javaPrimitiveType && m.parameterTypes.isEmpty()) {
-                        try {
-                            val hookHandle = xposedModule.hook(m).intercept { true }
-                            registerHook(hookHandle)
-                            hookedPremiumMethods++
-                        } catch (_: Exception) {}
-                    }
-                }
-            } catch (e: Exception) {
-                logError("[WARN] Failed to hook premium class: $className", e)
+        // nativeInit checks that Java's premium state matches its native snapshot.
+        // Installing the premium hooks before GrafikaApplication.onCreate returns
+        // can make that check fail and open AppIntegrityActivity.
+        synchronized(premiumHookLock) {
+            pendingPremiumClasses.addAll(premiumClasses)
+            if (applicationInitialized) {
+                installPremiumHooks(classLoader)
+            } else {
+                logInfo("[INTEGRITY] Premium hooks deferred until app initialization completes.")
             }
         }
-        logInfo("[SUCCESS] Aggressive Premium state forced. Hooked $hookedPremiumMethods methods.")
 
         val targetPairip = pairipClass ?: "com.pairip.licensecheck.LicenseClient"
         try {
@@ -111,9 +108,50 @@ class GrafikaHook : BaseDynamicHook() {
         }
     }
 
+    private fun installPremiumHooks(classLoader: ClassLoader) {
+        var hookedPremiumMethods = 0
+        for (className in pendingPremiumClasses - hookedPremiumClasses) {
+            try {
+                val clazz = classLoader.loadClass(className)
+                clazz.declaredMethods.forEach { m ->
+                    if (m.returnType == Boolean::class.javaPrimitiveType && m.parameterTypes.isEmpty()) {
+                        try {
+                            val hookHandle = xposedModule.hook(m).intercept { true }
+                            registerHook(hookHandle)
+                            hookedPremiumMethods++
+                        } catch (_: Exception) {}
+                    }
+                }
+                hookedPremiumClasses.add(className)
+            } catch (e: Exception) {
+                logError("[WARN] Failed to hook premium class: $className", e)
+            }
+        }
+        logInfo("[SUCCESS] Aggressive Premium state forced. Hooked $hookedPremiumMethods methods.")
+    }
+
     override fun onPackageLoaded(classLoader: ClassLoader) {
+        hookApplicationInitialization(classLoader)
         observeIntegrityActivityLaunch(classLoader)
         hookActivityLifecycle(classLoader)
+    }
+
+    private fun hookApplicationInitialization(classLoader: ClassLoader) {
+        try {
+            val applicationClass = classLoader.loadClass("com.grafika.app.GrafikaApplication")
+            val onCreate = applicationClass.getDeclaredMethod("onCreate")
+            registerHook(xposedModule.hook(onCreate).intercept { chain ->
+                val result = chain.proceed()
+                synchronized(premiumHookLock) {
+                    applicationInitialized = true
+                    logInfo("[INTEGRITY] Grafika initialization completed.")
+                    installPremiumHooks(classLoader)
+                }
+                result
+            })
+        } catch (t: Throwable) {
+            logError("[ERROR] Failed to defer premium hooks until Grafika initialization", t)
+        }
     }
 
     private fun observeIntegrityActivityLaunch(classLoader: ClassLoader) {
