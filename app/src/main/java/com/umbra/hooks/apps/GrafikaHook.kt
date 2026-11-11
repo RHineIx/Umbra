@@ -2,7 +2,10 @@ package com.umbra.hooks.apps
 
 import android.annotation.SuppressLint
 import android.app.Activity
+import android.app.AlertDialog
+import android.content.Intent
 import android.content.SharedPreferences
+import android.os.Bundle
 import android.view.View
 import android.view.ViewGroup
 import android.view.ViewTreeObserver
@@ -21,6 +24,7 @@ class GrafikaHook : BaseDynamicHook() {
     @Volatile private var isUiTweaked = false
 
     companion object {
+        private const val INTEGRITY_ACTIVITY = "com.grafika.app.integrity.AppIntegrityActivity"
         private const val KEY_PREMIUM_TARGETS = "grafika_premium_targets"
         private const val KEY_PAIRIP_TARGET = "grafika_pairip_target"
     }
@@ -110,7 +114,62 @@ class GrafikaHook : BaseDynamicHook() {
     }
 
     override fun onPackageLoaded(classLoader: ClassLoader) {
+        hookIntegrityActivity(classLoader)
         hookActivityLifecycle(classLoader)
+    }
+
+    private fun hookIntegrityActivity(classLoader: ClassLoader) {
+        // This check is independent of Pairip and can run before the DexKit cache is ready.
+        try {
+            val instrumentationClass = classLoader.loadClass("android.app.Instrumentation")
+            instrumentationClass.declaredMethods
+                .filter { method ->
+                    method.name == "execStartActivity" &&
+                        method.parameterTypes.any { it == Intent::class.java }
+                }
+                .forEach { method ->
+                    try {
+                        registerHook(xposedModule.hook(method).intercept { chain ->
+                            val intent = chain.args.filterIsInstance<Intent>().firstOrNull()
+                            if (intent?.component?.className == INTEGRITY_ACTIVITY) {
+                                logInfo("[INTEGRITY] Blocked AppIntegrityActivity launch.")
+                                null
+                            } else {
+                                chain.proceed()
+                            }
+                        })
+                    } catch (t: Throwable) {
+                        logError("[WARN] Failed to hook ${method.name} overload", t)
+                    }
+                }
+        } catch (t: Throwable) {
+            logError("[WARN] Failed to intercept integrity activity launches", t)
+        }
+
+        // Handle a direct launch that does not pass through this process's Instrumentation.
+        try {
+            val activityClass = classLoader.loadClass(INTEGRITY_ACTIVITY)
+            val onCreate = activityClass.getDeclaredMethod("onCreate", Bundle::class.java)
+            registerHook(xposedModule.hook(onCreate).intercept { chain ->
+                val result = chain.proceed()
+                val activity = chain.thisObject as Activity
+                activityClass.declaredFields
+                    .filter { AlertDialog::class.java.isAssignableFrom(it.type) }
+                    .forEach { field ->
+                        try {
+                            field.isAccessible = true
+                            (field.get(activity) as? AlertDialog)?.dismiss()
+                        } catch (t: Throwable) {
+                            logError("[WARN] Failed to dismiss integrity dialog", t)
+                        }
+                    }
+                activity.finish()
+                logInfo("[INTEGRITY] Closed directly launched AppIntegrityActivity.")
+                result
+            })
+        } catch (t: Throwable) {
+            logError("[WARN] Failed to intercept AppIntegrityActivity.onCreate", t)
+        }
     }
 
     private fun hookActivityLifecycle(classLoader: ClassLoader) {
