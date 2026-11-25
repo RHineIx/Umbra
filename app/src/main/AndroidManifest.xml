@@ -4,6 +4,10 @@
 
     <uses-permission android:name="android.permission.INTERNET" />
 
+    <queries>
+        <package android:name="com.android.vending" />
+    </queries>
+
     <application
         android:allowBackup="false"
         tools:ignore="DataExtractionRules"
@@ -13,6 +17,12 @@
         android:description="@string/app_description"
         android:supportsRtl="true"
         android:theme="@style/Theme.Umbra">
+
+        <!-- Calls are authenticated against the Play Store UID inside the provider. -->
+        <provider
+            android:name=".billing.BillingAccountProvider"
+            android:authorities="com.umbra.hooks.billing"
+            android:exported="true" />
 
         <activity
             android:name=".MainActivity"

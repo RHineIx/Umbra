@@ -1,12 +1,16 @@
 package com.umbra.hooks.ui
 
 import android.animation.ArgbEvaluator
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.shrinkVertically
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
 import androidx.compose.animation.core.Easing
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.CubicBezierEasing
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
-import androidx.compose.foundation.Image
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.clickable
@@ -73,6 +77,9 @@ fun UmbraScreen(
     saveSpacebarSettings: (SpacebarSettings) -> Boolean = { false },
 ) {
     var expanded by rememberSaveable { mutableStateOf(false) }
+    var gboardExpanded by rememberSaveable { mutableStateOf(false) }
+    var playExpanded by rememberSaveable { mutableStateOf(false) }
+    var otherHooksExpanded by rememberSaveable { mutableStateOf(false) }
     var editing by rememberSaveable { mutableStateOf(false) }
     var initialLimit by rememberSaveable { mutableIntStateOf(10) }
     var initialDays by rememberSaveable { mutableIntStateOf(3) }
@@ -140,27 +147,57 @@ fun UmbraScreen(
                 }
             }
             Spacer(Modifier.height(16.dp))
-            HookRegistry.getHooks().forEach { hook ->
-                HookCard(
-                    hook,
-                    onClick = {
-                        readClipboardSettings()?.let { (limit, days) ->
-                            initialLimit = limit
-                            initialDays = days
-                            editing = true
-                        }
-                    },
-                    onSpacebarClick = {
-                        readSpacebarSettings()?.let { settings ->
-                            initialSpacebarEnabled = settings.enabled
-                            initialSpacebarIcon = settings.icon.id
-                            initialSpacebarCustomImage = settings.customImage
-                            initialSpacebarCustomTint = settings.customTint
-                            editingSpacebar = true
-                        }
-                    },
-                )
-                Spacer(Modifier.height(16.dp))
+            ExpandableHookCard(
+                title = R.string.title_gboard,
+                description = R.string.gboard_card_description,
+                expanded = gboardExpanded,
+                onToggle = { gboardExpanded = !gboardExpanded },
+                tag = "gboard",
+            ) {
+                GboardActionRow(R.drawable.ic_clipboard, R.string.gboard_clipboard_title,
+                    R.string.desc_gboard_features) {
+                    readClipboardSettings()?.let { (limit, days) ->
+                        initialLimit = limit
+                        initialDays = days
+                        editing = true
+                    }
+                }
+                GboardActionRow(R.drawable.ic_spacebar, R.string.spacebar_icon_title,
+                    R.string.gboard_spacebar_summary) {
+                    readSpacebarSettings()?.let { settings ->
+                        initialSpacebarEnabled = settings.enabled
+                        initialSpacebarIcon = settings.icon.id
+                        initialSpacebarCustomImage = settings.customImage
+                        initialSpacebarCustomTint = settings.customTint
+                        editingSpacebar = true
+                    }
+                }
+            }
+            Spacer(Modifier.height(16.dp))
+            ExpandableHookCard(
+                title = R.string.billing_title,
+                description = R.string.billing_summary,
+                expanded = playExpanded,
+                onToggle = { playExpanded = !playExpanded },
+                tag = "google_play",
+            ) {
+                GooglePlaySettingsContent(state.isServiceActive)
+            }
+            Spacer(Modifier.height(16.dp))
+            ExpandableHookCard(
+                title = R.string.other_hooks_title,
+                description = R.string.other_hooks_description,
+                expanded = otherHooksExpanded,
+                onToggle = { otherHooksExpanded = !otherHooksExpanded },
+                tag = "other_hooks",
+            ) {
+                val otherHooks = HookRegistry.getHooks().filterNot { it.settingsAvailable }
+                Column(
+                    Modifier.fillMaxWidth(),
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    otherHooks.forEach { hook -> OtherHookRow(hook) }
+                }
             }
         }
     }
@@ -293,54 +330,76 @@ private fun SettingRow(title: Int, description: Int, checked: Boolean, enabled: 
 }
 
 @Composable
-private fun HookCard(hook: HookItem, onClick: () -> Unit, onSpacebarClick: () -> Unit) {
-    if (hook.settingsAvailable) {
-        GboardCard(onClick, onSpacebarClick)
-        return
-    }
+private fun ExpandableHookCard(
+    title: Int,
+    description: Int,
+    expanded: Boolean,
+    onToggle: () -> Unit,
+    tag: String,
+    content: @Composable ColumnScope.() -> Unit,
+) {
+    val colors = MaterialTheme.colorScheme
+    val rotation by animateFloatAsState(
+        targetValue = if (expanded) 90f else 0f,
+        animationSpec = tween(220),
+        label = "hook chevron",
+    )
+    val expansionLabel = stringResource(if (expanded) R.string.status_expanded else R.string.status_collapsed)
     Card(
-        Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(20.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceColorAtElevation(2.dp)),
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
-        elevation = CardDefaults.cardElevation(2.dp)
+        modifier = Modifier.fillMaxWidth().testTag("hook_" + tag),
+        shape = RoundedCornerShape(24.dp),
+        colors = CardDefaults.cardColors(containerColor = colors.surfaceContainerLow),
+        border = BorderStroke(1.dp, colors.outlineVariant),
     ) {
-        Column(Modifier.padding(24.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(stringResource(hook.titleResId), Modifier.weight(1f), style = MaterialTheme.typography.titleLarge)
+        Surface(
+            onClick = onToggle,
+            modifier = Modifier.fillMaxWidth().testTag("hook_" + tag + "_header")
+                .semantics { stateDescription = expansionLabel },
+            color = Color.Transparent,
+        ) {
+            Row(
+                Modifier.fillMaxWidth().padding(20.dp),
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Text(stringResource(title), style = MaterialTheme.typography.titleLarge,
+                        fontWeight = FontWeight.SemiBold)
+                    Text(stringResource(description), style = MaterialTheme.typography.bodySmall,
+                        color = colors.onSurfaceVariant)
+                }
+                Icon(painterResource(R.drawable.ic_chevron_right), contentDescription = null,
+                    modifier = Modifier.size(20.dp).graphicsLayer { rotationZ = rotation },
+                    tint = colors.onSurfaceVariant)
             }
-            Text(stringResource(hook.descriptionResId), Modifier.padding(top = 8.dp),
-                style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+        AnimatedVisibility(
+            visible = expanded,
+            enter = expandVertically(animationSpec = tween(260)) + fadeIn(animationSpec = tween(180)),
+            exit = shrinkVertically(animationSpec = tween(220)) + fadeOut(animationSpec = tween(140)),
+        ) {
+            Column(
+                Modifier.fillMaxWidth().padding(start = 12.dp, end = 12.dp, bottom = 12.dp),
+                verticalArrangement = Arrangement.spacedBy(4.dp),
+                content = content,
+            )
         }
     }
 }
 
 @Composable
-private fun GboardCard(onClipboardClick: () -> Unit, onSpacebarClick: () -> Unit) {
+private fun OtherHookRow(hook: HookItem) {
     val colors = MaterialTheme.colorScheme
-    Card(
+    Surface(
         modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(24.dp),
-        colors = CardDefaults.cardColors(containerColor = colors.surfaceContainerLow),
-        border = BorderStroke(1.dp, colors.outlineVariant),
+        shape = RoundedCornerShape(16.dp),
+        color = colors.surfaceContainerHigh,
     ) {
-        Row(Modifier.padding(20.dp), horizontalArrangement = Arrangement.spacedBy(14.dp),
-            verticalAlignment = Alignment.CenterVertically) {
-            Image(painterResource(R.drawable.ic_gboard_logo), contentDescription = null,
-                modifier = Modifier.size(44.dp))
-            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                Text(stringResource(R.string.title_gboard), style = MaterialTheme.typography.titleLarge,
-                    fontWeight = FontWeight.SemiBold)
-                Text(stringResource(R.string.gboard_card_description), style = MaterialTheme.typography.bodySmall,
-                    color = colors.onSurfaceVariant)
-            }
-        }
-        Column(Modifier.padding(start = 12.dp, end = 12.dp, bottom = 12.dp),
-            verticalArrangement = Arrangement.spacedBy(4.dp)) {
-            GboardActionRow(R.drawable.ic_clipboard, R.string.gboard_clipboard_title,
-                R.string.desc_gboard_features, onClipboardClick)
-            GboardActionRow(R.drawable.ic_spacebar, R.string.spacebar_icon_title,
-                R.string.gboard_spacebar_summary, onSpacebarClick)
+        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            Text(stringResource(hook.titleResId), style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.SemiBold)
+            Text(stringResource(hook.descriptionResId), style = MaterialTheme.typography.bodySmall,
+                color = colors.onSurfaceVariant)
         }
     }
 }

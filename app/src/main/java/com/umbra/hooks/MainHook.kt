@@ -2,6 +2,7 @@ package com.umbra.hooks
 
 import android.annotation.SuppressLint
 import android.util.Log
+import com.umbra.hooks.apps.GooglePlayHook
 import com.umbra.hooks.apps.GboardHook
 import com.umbra.hooks.apps.GrafikaHook
 import com.umbra.hooks.apps.PydroidHook
@@ -63,8 +64,26 @@ class MainHook : XposedModule() {
         }
     }
 
+    // Play Store uses the final package class loader, rather than the initial loader.
+    private var googlePlayHook: GooglePlayHook? = null
+
+    override fun onPackageReady(param: XposedModuleInterface.PackageReadyParam) {
+        if (param.packageName != GooglePlayHook.PACKAGE || googlePlayHook != null) return
+        val hook = GooglePlayHook(this)
+        googlePlayHook = hook
+        try {
+            hook.start(param.classLoader)
+        } catch (t: Throwable) {
+            hook.detachAll()
+            googlePlayHook = null
+            log(Log.ERROR, TAG, "Google Play initialization failed", t)
+        }
+    }
+
     override fun onHotReloading(param: XposedModuleInterface.HotReloadingParam): Boolean {
         // Detach all hooks safely before hot-reloading to prevent memory leaks from the old generation
+        googlePlayHook?.detachAll()
+        googlePlayHook = null
         activeHooks.forEach { it.detachAll() }
         activeHooks.clear()
 
