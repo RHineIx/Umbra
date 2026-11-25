@@ -1,6 +1,6 @@
 # Google Play account switcher
 
-Enable the Google Play Store scope for Umbra in an API 102-compatible manager, force-stop Google Play once, open it, then open Umbra. The Google Play card has no app icon. The Gboard header logo is also removed; its functional action icons and settings remain.
+Enable the Google Play Store scope for Umbra in an API 102-compatible manager, force-stop Google Play once, open it, then open Umbra. The original single-column layout is retained. Gboard and Google Play are separate expandable cards, initially collapsed. Pydroid 3, Grafika and Showly are grouped inside the initially collapsed Other Hooks card. Neither Google Play nor Gboard has an app logo; Gboard's functional action icons and settings remain.
 
 The feature is off by default. Enable it, choose an available Google account, and verify the account in the next purchase confirmation. Reset removes the preference and turns off the override. No purchases are initiated by Umbra. Existing checkout sessions may need to be closed before changing accounts.
 
@@ -9,6 +9,10 @@ The original PSwitch symbol family is used, with primary return-signature valida
 The companion stores account names locally, with Android backups disabled; a narrow provider call verifies the caller package and UID. No account-name logging, exported broadcast, unrestricted provider query, root file, or external network transmission is added. Other Umbra features do not receive the selected account via shared remote preferences.
 
 ## Manual validation
+
+- Expand and collapse each of the three cards independently. Check that Gboard clipboard and spacebar settings still work, and that returning from the spacebar screen preserves expansion state.
+- Turn Account override off: the entire account list, including the default row, must dim and reject selection. Re-enable with a connected Xposed service to restore normal selection.
+
 
 - With override off, compare default purchase-sheet behavior to unmodified Play Store.
 - With two accounts, enable and choose each in turn; confirm the displayed account and price without completing a purchase.

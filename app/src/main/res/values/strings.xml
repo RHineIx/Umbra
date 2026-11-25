@@ -90,4 +90,8 @@
     <string name="billing_saved">Selected account: %1$s</string>
     <string name="billing_version">Play Store version: %1$s</string>
     <string name="billing_missing">The selected account is no longer available. The original Play Store behavior is used.</string>
+    <string name="other_hooks_title">Other Hooks</string>
+    <string name="other_hooks_description">Pydroid 3, Grafika and Showly</string>
+    <string name="billing_enable_to_choose">Enable Account override to choose an account.</string>
+    <string name="billing_status_title">Hook status</string>
 </resources>
