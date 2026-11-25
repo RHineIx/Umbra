@@ -1,0 +1,22 @@
+# Google Play account switcher
+
+Enable the Google Play Store scope for Umbra in an API 102-compatible manager, force-stop Google Play once, open it, then open Umbra. The Google Play card has no app icon. The Gboard header logo is also removed; its functional action icons and settings remain.
+
+The feature is off by default. Enable it, choose an available Google account, and verify the account in the next purchase confirmation. Reset removes the preference and turns off the override. No purchases are initiated by Umbra. Existing checkout sessions may need to be closed before changing accounts.
+
+The original PSwitch symbol family is used, with primary return-signature validation, optional secondary routes, and rollback of partially installed primary hooks. No guessed DexKit mappings are applied to billing paths. Compatibility is not guaranteed across Play Store updates. If primary symbols cannot be resolved, or the selected account cannot be verified in the current account list, the original behavior is retained. The status card is a last report, not live proof of checkout success.
+
+The companion stores account names locally, with Android backups disabled; a narrow provider call verifies the caller package and UID. No account-name logging, exported broadcast, unrestricted provider query, root file, or external network transmission is added. Other Umbra features do not receive the selected account via shared remote preferences.
+
+## Manual validation
+
+- With override off, compare default purchase-sheet behavior to unmodified Play Store.
+- With two accounts, enable and choose each in turn; confirm the displayed account and price without completing a purchase.
+- Reset, remove the selected Google account, and verify fallback to the default.
+- Force-stop/reopen Play Store and Umbra; verify persisted selection, live changes for new purchase flows, and scope-disabled behavior.
+- Test an unsupported store build and check that the original behavior survives.
+- Test calls from an unrelated app: provider calls and queries must be rejected.
+- Exercise Gboard clipboard and spacebar settings and other existing hooks.
+- Test hot reload and cold restart on actual Android 17 / ColorOS 17 with the intended framework.
+
+Not affiliated with Google. Use only with accounts and devices you own or are authorized to use.

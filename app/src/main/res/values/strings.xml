@@ -73,4 +73,21 @@
     <string name="toast_link_unavailable">Could not open link</string>
     <string name="status_expanded">Expanded</string>
     <string name="status_collapsed">Collapsed</string>
+    <string name="billing_title">Google Play</string>
+    <string name="billing_summary">Choose the Google account for in-app purchases.</string>
+    <string name="billing_enable">Account override</string>
+    <string name="billing_default">Play Store default</string>
+    <string name="billing_accounts">Available accounts</string>
+    <string name="billing_open_store">Open Play Store</string>
+    <string name="billing_reset">Reset to default</string>
+    <string name="billing_empty">No accounts reported yet. Enable the Play Store scope, force-stop the store once, then open it and return here.</string>
+    <string name="billing_pending">No hook report yet.</string>
+    <string name="billing_ready">Last reported: account hooks detected</string>
+    <string name="billing_unsupported">Last reported: unsupported Play Store build</string>
+    <string name="billing_service_off">Enable Umbra in your Xposed manager before using this feature.</string>
+    <string name="billing_verify">Always verify the account and amount in the purchase confirmation. Changes affect new purchase flows.</string>
+    <string name="billing_store_unavailable">Google Play Store could not be opened.</string>
+    <string name="billing_saved">Selected account: %1$s</string>
+    <string name="billing_version">Play Store version: %1$s</string>
+    <string name="billing_missing">The selected account is no longer available. The original Play Store behavior is used.</string>
 </resources>

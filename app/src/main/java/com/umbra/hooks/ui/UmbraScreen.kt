@@ -6,7 +6,6 @@ import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.CubicBezierEasing
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
-import androidx.compose.foundation.Image
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.clickable
@@ -162,6 +161,7 @@ fun UmbraScreen(
                 )
                 Spacer(Modifier.height(16.dp))
             }
+            GooglePlaySettingsCard(state.isServiceActive)
         }
     }
     if (editing) {
@@ -326,8 +326,6 @@ private fun GboardCard(onClipboardClick: () -> Unit, onSpacebarClick: () -> Unit
     ) {
         Row(Modifier.padding(20.dp), horizontalArrangement = Arrangement.spacedBy(14.dp),
             verticalAlignment = Alignment.CenterVertically) {
-            Image(painterResource(R.drawable.ic_gboard_logo), contentDescription = null,
-                modifier = Modifier.size(44.dp))
             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 Text(stringResource(R.string.title_gboard), style = MaterialTheme.typography.titleLarge,
                     fontWeight = FontWeight.SemiBold)
