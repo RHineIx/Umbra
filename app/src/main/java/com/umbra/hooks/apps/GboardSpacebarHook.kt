@@ -6,6 +6,7 @@ import android.graphics.Color
 import android.graphics.RectF
 import android.os.Build
 import android.os.Looper
+import android.os.Handler
 import android.util.Log
 import android.view.View
 import android.view.ViewGroup
@@ -51,13 +52,18 @@ internal class GboardSpacebarHook(private val module: XposedModule, private val 
                 var tint: Int? = null
                 if (active.get() && view != null && canvas != null && view.id != View.NO_ID) {
                     try {
-                        if (isSpacebar(view)) tint = prepareLabels(view)
+                        if (view.width > 0 && view.height > 0 && isSpacebar(view)) tint = prepareLabels(view)
                     } catch (t: Throwable) {
                         fail(t)
                     }
                 }
                 // Always preserve Gboard's original drawing, background, touch and accessibility behavior.
-                val result = chain.proceed()
+                val result = try {
+                    chain.proceed()
+                } catch (t: Throwable) {
+                    if (tint != null) restoreLabels()
+                    throw t
+                }
                 if (active.get() && tint != null && view != null && canvas != null) {
                     try {
                         val bounds = iconBounds(view)
@@ -75,8 +81,7 @@ internal class GboardSpacebarHook(private val module: XposedModule, private val 
             object : XposedInterface.HookHandle by handle {
                 override fun unhook() {
                     active.set(false)
-                    handle.unhook()
-                    restoreLabels()
+                    try { handle.unhook() } finally { restoreLabels() }
                 }
             }
         } catch (t: Throwable) {
@@ -104,20 +109,30 @@ internal class GboardSpacebarHook(private val module: XposedModule, private val 
         }
         val queue = ArrayDeque<View>()
         for (index in 0 until root.childCount) queue.add(root.getChildAt(index))
+        val labels = mutableListOf<TextView>()
         var scanned = 0
         var tint: Int? = null
+        // First collect, then mutate. A changed or unexpectedly large view
+        // hierarchy must not leave partially hidden labels.
         while (queue.isNotEmpty() && scanned++ < 64) {
             val view = queue.removeFirst()
             if (view.visibility != View.VISIBLE) continue
             if (view is TextView && !view.text.isNullOrEmpty()) {
                 if (tint == null && Color.alpha(view.currentTextColor) > 0) tint = view.currentTextColor
-                if (view.alpha != 0f) {
-                    synchronized(hiddenLabels) { if (!hiddenLabels.containsKey(view)) hiddenLabels[view] = view.alpha }
-                    // Keep the label's text, layout and accessibility information intact.
-                    view.alpha = 0f
-                }
+                labels.add(view)
             } else if (view is ViewGroup) {
                 for (index in 0 until view.childCount) queue.add(view.getChildAt(index))
+            }
+        }
+        if (queue.isNotEmpty()) {
+            restoreLabels()
+            if (unsupported.compareAndSet(false, true)) log("[WARN] Spacebar hierarchy exceeded scan limit; original labels retained.")
+            return null
+        }
+        for (view in labels) {
+            if (view.alpha != 0f) {
+                synchronized(hiddenLabels) { if (!hiddenLabels.containsKey(view)) hiddenLabels[view] = view.alpha }
+                view.alpha = 0f
             }
         }
         return tint ?: Color.GRAY
@@ -147,7 +162,7 @@ internal class GboardSpacebarHook(private val module: XposedModule, private val 
                 if (view.alpha == 0f) view.alpha = alpha
                 view.invalidate()
             }
-            if (Looper.myLooper() == Looper.getMainLooper()) restore.run() else view.post(restore)
+            if (Looper.myLooper() == Looper.getMainLooper()) restore.run() else Handler(Looper.getMainLooper()).post(restore)
         }
     }
 

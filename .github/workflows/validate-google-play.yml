@@ -4,6 +4,7 @@ on:
     branches:
       - feature/google-play-account-switcher
       - feature/google-play-resilience
+      - feature/gboard-resilience
   workflow_dispatch:
 
 permissions:
