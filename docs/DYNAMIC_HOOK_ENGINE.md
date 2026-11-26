@@ -11,7 +11,10 @@ adapters may handle errors internally or install later.
 
 Fresh analysis uses the final target loader for split APKs. A per-instance
 worker is cancelled at teardown, duplicate package registration is suppressed,
-and handles registered after teardown are immediately removed. A successful
+and handles registered after teardown are immediately removed. Fresh scans use
+an isolated temporary preference file; only the active generation publishes
+their results to the persistent cache. The temporary file is removed in a
+finally block (a process kill may leave an unused staging file). A successful
 cache hit preserves synchronous installation timing. Hashing the APKs has a
 startup I/O cost. No app-specific target selection or callback behavior is
 changed. Grafika explicitly declares its existing deferred installation.

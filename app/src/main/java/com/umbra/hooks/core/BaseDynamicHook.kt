@@ -14,6 +14,7 @@ import io.github.libxposed.api.XposedModule
 import io.github.libxposed.api.XposedModuleInterface
 import org.luckypray.dexkit.DexKitBridge
 import java.io.File
+import java.util.UUID
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
 import java.util.concurrent.Future
@@ -170,9 +171,9 @@ abstract class BaseDynamicHook : AppHook {
         }
         // Each adapter owns a separate cache preference file. No user settings
         // are touched, and old schema/version-only entries are invalidated.
-        prefs.edit().clear().apply()
         synchronized(lifecycle) {
             if (detached || task != null) return
+            prefs.edit().clear().apply()
             val executor = Executors.newSingleThreadExecutor()
             worker = executor
             task = executor.submit {
@@ -195,31 +196,36 @@ abstract class BaseDynamicHook : AppHook {
             System.load(File(xposedModule.moduleApplicationInfo.nativeLibraryDir, "libdexkit.so").absolutePath)
         }
         if (detached || Thread.currentThread().isInterrupted) return
-        val count = attempt {
-            // For split installations use the actual final application loader.
-            // Do not silently narrow a failed/ambiguous loader scan to the base APK.
-            val bridge = if (context.applicationInfo.splitSourceDirs.isNullOrEmpty()) {
-                DexKitBridge.create(context.applicationInfo.sourceDir)
-            } else {
-                DexKitBridge.create(targetClassLoader, true)
+        // Existing adapters write discovery candidates through SharedPreferences.
+        // Isolate those writes from the persistent cache until this generation
+        // has completed the scan and is still active. An old cancelled worker
+        // cannot overwrite a newer generation's cache.
+        val stagingName = prefsCacheName + "_scan_" + UUID.randomUUID().toString()
+        val staging = context.getSharedPreferences(stagingName, Context.MODE_PRIVATE)
+        try {
+            val count = attempt {
+                val bridge = if (context.applicationInfo.splitSourceDirs.isNullOrEmpty()) {
+                    DexKitBridge.create(context.applicationInfo.sourceDir)
+                } else {
+                    DexKitBridge.create(targetClassLoader, true)
+                }
+                bridge.use {
+                    if (!detached && !Thread.currentThread().isInterrupted) performSearchSynchronous(it, staging)
+                }
             }
-            bridge.use {
-                if (!detached && !Thread.currentThread().isInterrupted) performSearchSynchronous(it, prefs)
+            synchronized(lifecycle) {
+                if (detached || Thread.currentThread().isInterrupted) return
+                val usable = count != null && hasCandidates(staging) && (count > 0 || mayDeferInstallation)
+                if (usable && key != null) publishCache(prefs, staging, key)
+                else prefs.edit().clear().apply()
+                if (!usable || count == null || count == 0) {
+                    logInfo("[DISCOVERY] No confirmed immediate installation; no success notification.")
+                    return
+                }
+                logInfo("[DISCOVERY] Registered " + count + " immediate hooks; behavior still requires runtime validation.")
             }
-        }
-        synchronized(lifecycle) {
-            if (detached || Thread.currentThread().isInterrupted) return
-            val usable = count != null && hasCandidates(prefs) && (count > 0 || mayDeferInstallation)
-            if (usable && key != null) {
-                prefs.edit().putString(DynamicCacheRules.BUILD_KEY, key).apply()
-            } else {
-                prefs.edit().clear().apply()
-            }
-            if (!usable || count == null || count == 0) {
-                logInfo("[DISCOVERY] No confirmed immediate installation; no success notification.")
-                return
-            }
-            logInfo("[DISCOVERY] Registered " + count + " immediate hooks; behavior still requires runtime validation.")
+        } finally {
+            runCatching { context.deleteSharedPreferences(stagingName) }
         }
         Handler(Looper.getMainLooper()).post {
             if (!detached) {
@@ -230,6 +236,26 @@ abstract class BaseDynamicHook : AppHook {
                 }
             }
         }
+    }
+
+    private fun publishCache(destination: SharedPreferences, staging: SharedPreferences, key: String) {
+        val editor = destination.edit().clear()
+        for ((name, value) in staging.all) {
+            if (name == DynamicCacheRules.BUILD_KEY || name == "app_version") continue
+            when (value) {
+                is String -> editor.putString(name, value)
+                is Set<*> -> {
+                    require(value.all { it is String })
+                    editor.putStringSet(name, value.filterIsInstance<String>().toSet())
+                }
+                is Int -> editor.putInt(name, value)
+                is Long -> editor.putLong(name, value)
+                is Boolean -> editor.putBoolean(name, value)
+                is Float -> editor.putFloat(name, value)
+                else -> throw IllegalArgumentException("Unsupported cache entry")
+            }
+        }
+        editor.putString(DynamicCacheRules.BUILD_KEY, key).apply()
     }
 
     protected abstract fun hasValidCache(cachePrefs: SharedPreferences): Boolean
