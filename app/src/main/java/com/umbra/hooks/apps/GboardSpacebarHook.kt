@@ -98,7 +98,7 @@ internal class GboardSpacebarHook(private val module: XposedModule, private val 
     private fun isSpacebar(view: View): Boolean {
         val resources = view.resources
         val recent = recentResource
-        val id = if (recent?.resource?.get() === resources) recent.id else synchronized(resourceIds) {
+        val id = if (recent != null && recent.resource.get() === resources) recent.id else synchronized(resourceIds) {
             resourceIds.getOrPut(resources) {
                 resources.getIdentifier("key_pos_space", "id", "com.google.android.inputmethod.latin")
             }.also { recentResource = ResourceMatch(resources, it) }
