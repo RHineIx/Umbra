@@ -8,12 +8,10 @@ import com.umbra.hooks.apps.GrafikaHook
 import com.umbra.hooks.apps.PydroidHook
 import com.umbra.hooks.apps.ShowlyHook
 import com.umbra.hooks.core.AppHook
-import com.umbra.hooks.core.BaseDynamicHook
 import com.umbra.hooks.utils.Constants
 import com.umbra.hooks.utils.PrefsManager
 import io.github.libxposed.api.XposedModule
 import io.github.libxposed.api.XposedModuleInterface
-import java.util.concurrent.CopyOnWriteArrayList
 
 @SuppressLint("NewApi")
 class MainHook : XposedModule() {
@@ -31,7 +29,9 @@ class MainHook : XposedModule() {
         )
 
     // API 102: Tracking active module instances for hot-reload scenarios securely
-    private val activeHooks = CopyOnWriteArrayList<AppHook>()
+    private val lifecycleLock = Any()
+    private val activeHooks = mutableMapOf<String, AppHook>()
+    private var retired = false
 
     override fun onPackageLoaded(param: XposedModuleInterface.PackageLoadedParam) {
         super.onPackageLoaded(param)
@@ -44,22 +44,24 @@ class MainHook : XposedModule() {
             log(Log.INFO, TAG, "[DEBUG] Analyzing supported package load: $packageName")
         }
 
-        try {
-            val hook = factory()
-            activeHooks.add(hook)
-
-            if (logsEnabled) {
-                log(Log.INFO, TAG, "[MATCH] Executing ${hook.javaClass.simpleName} for $packageName")
-            }
-
-            hook.handleLoadPackage(this, param)
-
-            if (logsEnabled) {
-                log(Log.INFO, TAG, "[SUCCESS] ${hook.javaClass.simpleName} attached successfully.")
-            }
-        } catch (t: Throwable) {
-            if (logsEnabled) {
-                log(Log.ERROR, TAG, "[FATAL] Exception occurred during module execution", t)
+        synchronized(lifecycleLock) {
+            if (retired || activeHooks.containsKey(packageName)) return
+            var hook: AppHook? = null
+            try {
+                val instance = factory()
+                hook = instance
+                activeHooks[packageName] = instance
+                if (logsEnabled) {
+                    log(Log.INFO, TAG, "[MATCH] Executing " + instance.javaClass.simpleName + " for " + packageName)
+                }
+                instance.handleLoadPackage(this, param)
+                if (logsEnabled) {
+                    log(Log.INFO, TAG, "[SUCCESS] " + instance.javaClass.simpleName + " attached successfully.")
+                }
+            } catch (t: Throwable) {
+                activeHooks.remove(packageName)
+                runCatching { hook?.detachAll() }
+                if (logsEnabled) log(Log.ERROR, TAG, "[FATAL] Exception occurred during module execution", t)
             }
         }
     }
@@ -68,29 +70,30 @@ class MainHook : XposedModule() {
     private var googlePlayHook: GooglePlayHook? = null
 
     override fun onPackageReady(param: XposedModuleInterface.PackageReadyParam) {
-        if (param.packageName != GooglePlayHook.PACKAGE || googlePlayHook != null) return
-        val hook = GooglePlayHook(this)
-        googlePlayHook = hook
-        try {
-            hook.start(param.classLoader)
-        } catch (t: Throwable) {
-            hook.detachAll()
-            googlePlayHook = null
-            log(Log.ERROR, TAG, "Google Play initialization failed", t)
+        if (param.packageName != GooglePlayHook.PACKAGE) return
+        synchronized(lifecycleLock) {
+            if (retired || googlePlayHook != null) return
+            val hook = GooglePlayHook(this)
+            googlePlayHook = hook
+            try {
+                hook.start(param.classLoader)
+            } catch (t: Throwable) {
+                runCatching { hook.detachAll() }
+                googlePlayHook = null
+                log(Log.ERROR, TAG, "Google Play initialization failed", t)
+            }
         }
     }
 
     override fun onHotReloading(param: XposedModuleInterface.HotReloadingParam): Boolean {
-        // Detach all hooks safely before hot-reloading to prevent memory leaks from the old generation
-        googlePlayHook?.detachAll()
-        googlePlayHook = null
-        activeHooks.forEach { it.detachAll() }
-        activeHooks.clear()
-
-        try {
-            // Shut down the shared background thread executor from the old classloader
-            BaseDynamicHook.sharedExecutor.shutdownNow()
-        } catch (_: Throwable) {
+        // Retire this generation before draining handles. New package callbacks
+        // cannot race with teardown and repopulate the old registry.
+        synchronized(lifecycleLock) {
+            retired = true
+            runCatching { googlePlayHook?.detachAll() }
+            googlePlayHook = null
+            activeHooks.values.forEach { runCatching { it.detachAll() } }
+            activeHooks.clear()
         }
 
         return true // Confirm and allow the hot reload process

@@ -3,6 +3,8 @@ package com.umbra.hooks.ui
 import android.content.SharedPreferences
 import android.widget.Toast
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.ui.graphics.Color
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
@@ -34,6 +36,12 @@ internal fun GooglePlaySettingsContent(serviceActive: Boolean) {
     val status = remember(revision) { prefs.getString(Billing.STATUS, null) }
     val version = remember(revision) { prefs.getString(Billing.VERSION, null) }
     val colors = MaterialTheme.colorScheme
+    val dark = isSystemInDarkTheme()
+    val reportColor = when (status) {
+        "ready" -> if (dark) Color(0xFF4ADE80) else Color(0xFF15803D)
+        "unsupported" -> if (dark) Color(0xFFF87171) else Color(0xFFB91C1C)
+        else -> colors.onSurfaceVariant
+    }
 
     val canChoose = enabled && serviceActive
 
@@ -73,7 +81,8 @@ internal fun GooglePlaySettingsContent(serviceActive: Boolean) {
                 "ready" -> R.string.billing_ready
                 "unsupported" -> R.string.billing_unsupported
                 else -> R.string.billing_pending
-            }), style = MaterialTheme.typography.bodySmall, color = colors.onSurfaceVariant)
+            }), style = MaterialTheme.typography.bodySmall, color = reportColor,
+                fontWeight = FontWeight.Medium)
             if (version != null) Text(stringResource(R.string.billing_version, version),
                 style = MaterialTheme.typography.bodySmall, color = colors.onSurfaceVariant)
             Text(stringResource(R.string.billing_verify), style = MaterialTheme.typography.bodySmall,
