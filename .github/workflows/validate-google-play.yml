@@ -1,10 +1,11 @@
-name: Validate Google Play account switcher
+name: Validate Umbra hooks
 on:
   push:
     branches:
       - feature/google-play-account-switcher
       - feature/google-play-resilience
       - feature/gboard-resilience
+      - feature/core-resilience
   workflow_dispatch:
 
 permissions:
@@ -44,6 +45,6 @@ jobs:
           ./gradlew --no-daemon --stacktrace "${tasks[@]}"
       - uses: actions/upload-artifact@v4
         with:
-          name: Umbra-google-play-debug
+          name: Umbra-debug
           path: app/build/outputs/apk/debug/*.apk
           if-no-files-found: error

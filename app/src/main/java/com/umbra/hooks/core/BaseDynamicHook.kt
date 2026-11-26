@@ -2,6 +2,7 @@ package com.umbra.hooks.core
 
 import android.content.Context
 import android.content.SharedPreferences
+import android.os.Build
 import android.os.Handler
 import android.os.Looper
 import android.util.Log
@@ -12,206 +13,226 @@ import io.github.libxposed.api.XposedInterface
 import io.github.libxposed.api.XposedModule
 import io.github.libxposed.api.XposedModuleInterface
 import org.luckypray.dexkit.DexKitBridge
-import java.util.concurrent.CopyOnWriteArrayList
+import java.io.File
 import java.util.concurrent.ExecutorService
-import java.util.concurrent.LinkedBlockingQueue
-import java.util.concurrent.ThreadPoolExecutor
-import java.util.concurrent.TimeUnit
+import java.util.concurrent.Executors
+import java.util.concurrent.Future
+import java.util.concurrent.atomic.AtomicBoolean
 
 /**
- * Core Abstract Hook Class optimized for LibXposed API 102.
- * Includes thread management, caching, and atomic hook detach mechanisms.
+ * Shared lifecycle and exact-build cache for background-discovered hooks.
+ * Gboard overrides initialization to preserve its early synchronous discovery.
+ * Target-specific matchers and hook callbacks remain the responsibility of adapters.
  */
 abstract class BaseDynamicHook : AppHook {
     protected abstract val tag: String
     protected abstract val prefsCacheName: String
     protected abstract val successToastMessage: String
+    protected open val discoveryRulesVersion: Int = 1
+    // Deferred adapters can legitimately install no handles during discovery.
+    // A discovery result must not be reported as installed in that case.
+    protected open val mayDeferInstallation: Boolean = false
 
     @Volatile protected var logsEnabled = false
     protected lateinit var xposedModule: XposedModule
     protected lateinit var targetClassLoader: ClassLoader
 
-    // API 102: Track hooks via HookHandle to safely detach them later (Thread-Safe Hot Reload Support)
-    private val activeHookHandles = CopyOnWriteArrayList<XposedInterface.HookHandle>()
-
-    companion object {
-        val sharedExecutor: ExecutorService by lazy {
-            ThreadPoolExecutor(
-                0,
-                1,
-                60L,
-                TimeUnit.SECONDS,
-                LinkedBlockingQueue<Runnable>(),
-            )
-        }
-    }
+    private val lifecycle = Any()
+    private val activeHookHandles = mutableListOf<XposedInterface.HookHandle>()
+    private val attemptHandles = ThreadLocal<MutableList<XposedInterface.HookHandle>>()
+    private val started = AtomicBoolean(false)
+    private val attached = AtomicBoolean(false)
+    @Volatile private var detached = false
+    private var worker: ExecutorService? = null
+    private var task: Future<*>? = null
 
     protected fun logInfo(message: String) {
         if (logsEnabled) xposedModule.log(Log.INFO, tag, message)
     }
 
-    protected fun logError(
-        message: String,
-        t: Throwable? = null,
-    ) {
+    protected fun logError(message: String, t: Throwable? = null) {
         if (logsEnabled) {
-            if (t != null) {
-                xposedModule.log(Log.ERROR, tag, message, t)
-            } else {
-                xposedModule.log(Log.ERROR, tag, message)
-            }
+            if (t != null) xposedModule.log(Log.ERROR, tag, message, t)
+            else xposedModule.log(Log.ERROR, tag, message)
         }
     }
 
-    /**
-     * API 102: Registers a hook handle for safe teardown
-     */
+    /** A late registration from a cancelled scan is immediately unhooked. */
     protected fun registerHook(handle: XposedInterface.HookHandle?) {
-        handle?.let { activeHookHandles.add(it) }
+        if (handle == null) return
+        val accepted = synchronized(lifecycle) {
+            if (detached) false else {
+                activeHookHandles.add(handle)
+                attemptHandles.get()?.add(handle)
+                true
+            }
+        }
+        if (!accepted) unhook(handle)
+    }
+
+    private fun unhook(handle: XposedInterface.HookHandle) {
+        try { handle.unhook() } catch (_: Throwable) {}
     }
 
     override fun detachAll() {
-        if (activeHookHandles.isNotEmpty()) {
-            logInfo("[TEARDOWN] Detaching ${activeHookHandles.size} active hooks safely.")
-            activeHookHandles.forEach { handle ->
-                try {
-                    handle.unhook() // Unhooks atomically in API 102
-                } catch (_: Throwable) {
-                }
-            }
-            activeHookHandles.clear()
+        val handles = synchronized(lifecycle) {
+            detached = true
+            task?.cancel(true)
+            worker?.shutdownNow()
+            task = null
+            worker = null
+            activeHookHandles.toList().asReversed().also { activeHookHandles.clear() }
         }
+        handles.forEach(::unhook)
+        logInfo("[TEARDOWN] Detached " + handles.size + " hooks and cancelled discovery.")
     }
 
-    override fun handleLoadPackage(
-        module: XposedModule,
-        param: XposedModuleInterface.PackageLoadedParam,
-    ) {
-        this.xposedModule = module
-        this.targetClassLoader = param.defaultClassLoader
-
-        logsEnabled = PrefsManager.getHookInt(xposedModule, Constants.KEY_GLOBAL_LOGS, 0) == 1
+    override fun handleLoadPackage(module: XposedModule, param: XposedModuleInterface.PackageLoadedParam) {
+        if (detached || param.packageName !in targetPackages || !started.compareAndSet(false, true)) return
+        xposedModule = module
+        targetClassLoader = param.defaultClassLoader
+        logsEnabled = PrefsManager.getHookInt(module, Constants.KEY_GLOBAL_LOGS, 0) == 1
 
         try {
-            val appClass = targetClassLoader.loadClass("android.app.Application")
-            val attachMethod = appClass.getDeclaredMethod("attach", Context::class.java)
-
-            val attachHookHandle =
-                module.hook(attachMethod).intercept { chain ->
-                    val result = chain.proceed()
-                    try {
-                        val context = chain.args[0] as Context
-                        logInfo("[INFO] Application.attach intercepted. Initializing Dynamic Engine...")
-                        onAppAttached(context, targetClassLoader)
-                    } catch (t: Throwable) {
-                        logError("[FATAL] Error occurred inside attach execution block", t)
+            val attach = android.app.Application::class.java.getDeclaredMethod("attach", Context::class.java)
+            registerHook(module.hook(attach).intercept { chain ->
+                val result = chain.proceed()
+                try {
+                    val context = chain.args.firstOrNull() as? Context
+                    if (!detached && context != null && context.packageName in targetPackages &&
+                        attached.compareAndSet(false, true)) {
+                        targetClassLoader = context.classLoader
+                        onAppAttached(context)
                     }
-                    return@intercept result
+                } catch (t: Throwable) {
+                    logError("[ERROR] Dynamic initialization failed.", t)
                 }
-            registerHook(attachHookHandle)
+                result
+            })
         } catch (t: Throwable) {
             logError("[ERROR] Failed to hook Application.attach", t)
         }
-
-        onPackageLoaded(targetClassLoader)
+        if (!detached) onPackageLoaded(targetClassLoader)
     }
 
     open fun onPackageLoaded(classLoader: ClassLoader) {}
 
-    private fun onAppAttached(
-        context: Context,
-        classLoader: ClassLoader,
-    ) {
-        val cachePrefs = context.getSharedPreferences(prefsCacheName, Context.MODE_PRIVATE)
-        val versionCode =
-            try {
-                context.packageManager.getPackageInfo(context.packageName, 0).versionCode
-            } catch (_: Exception) {
-                -1
+    private fun identity(context: Context): String? = runCatching {
+        val info = context.packageManager.getPackageInfo(context.packageName, 0)
+        @Suppress("DEPRECATION")
+        val code = if (Build.VERSION.SDK_INT >= 28) info.longVersionCode else info.versionCode.toLong()
+        val app = context.applicationInfo
+        DynamicCacheRules.buildKey(context.packageName, code, info.versionName, info.lastUpdateTime,
+            DynamicCacheRules.sha256(File(app.sourceDir)),
+            app.splitSourceDirs.orEmpty().map { DynamicCacheRules.sha256(File(it)) },
+            discoveryRulesVersion)
+    }.getOrNull()
+
+    private fun hasCandidates(prefs: SharedPreferences): Boolean =
+        hasValidCache(prefs) && DynamicCacheRules.hasTargets(prefs.all)
+
+    /**
+     * Track only handles created on this installation thread. Existing lifecycle
+     * hooks and independently deferred callbacks are never part of its rollback.
+     */
+    private fun attempt(block: () -> Unit): Int? {
+        if (detached) return null
+        val batch = mutableListOf<XposedInterface.HookHandle>()
+        attemptHandles.set(batch)
+        return try {
+            block()
+            if (detached) null else batch.size
+        } catch (t: Throwable) {
+            val rollback = synchronized(lifecycle) {
+                batch.asReversed().filter { activeHookHandles.remove(it) }
             }
+            rollback.forEach(::unhook)
+            logError("[ERROR] Installation attempt failed; its registered handles were rolled back.", t)
+            null
+        } finally {
+            attemptHandles.remove()
+        }
+    }
 
-        val isSameVersion = (versionCode != -1 && versionCode == cachePrefs.getInt("app_version", -1))
-
-        if (isSameVersion && hasValidCache(cachePrefs)) {
-            logInfo("[CACHE] Valid version cache ($versionCode) found. Applying optimized offsets.")
-            applyHooks(classLoader, cachePrefs)
-        } else {
-            logInfo("[UPDATE] App version updated or cache missing. Initiating DexKit background search...")
-            sharedExecutor.submit {
+    private fun onAppAttached(context: Context) {
+        val prefs = context.getSharedPreferences(prefsCacheName, Context.MODE_PRIVATE)
+        // Compute content identity once on attach to preserve the previous
+        // synchronous cache-hit installation timing. Fresh scanning is asynchronous.
+        val key = identity(context)
+        if (detached) return
+        if (key != null && prefs.getString(DynamicCacheRules.BUILD_KEY, null) == key && hasCandidates(prefs)) {
+            val count = attempt { applyHooks(targetClassLoader, prefs) }
+            if (count != null && (count > 0 || mayDeferInstallation)) {
+                logInfo("[CACHE] Candidate cache applied; registered " + count + " immediate hooks.")
+                return
+            }
+            logInfo("[CACHE] No immediate installation; invalidating and rediscovering.")
+        }
+        // Each adapter owns a separate cache preference file. No user settings
+        // are touched, and old schema/version-only entries are invalidated.
+        prefs.edit().clear().apply()
+        synchronized(lifecycle) {
+            if (detached || task != null) return
+            val executor = Executors.newSingleThreadExecutor()
+            worker = executor
+            task = executor.submit {
                 try {
-                    performSearchAndCache(context, versionCode, cachePrefs)
-                    logInfo("[SUCCESS] Background DexKit analysis finished.")
-
-                    Handler(Looper.getMainLooper()).post {
-                        try {
-                            Toast.makeText(context, successToastMessage, Toast.LENGTH_LONG).show()
-                        } catch (e: Throwable) {
-                            logError("[WARN] Context invalid for Toast display", e)
-                        }
-                    }
+                    discover(context, prefs, key)
                 } catch (t: Throwable) {
-                    logError("[ERROR] Background DexKit analysis failed", t)
+                    logError("[ERROR] Background discovery failed.", t)
+                } finally {
+                    executor.shutdown()
                 }
             }
         }
     }
 
-    private fun loadDexKitSafely() {
+    private fun discover(context: Context, prefs: SharedPreferences, key: String?) {
+        if (detached || Thread.currentThread().isInterrupted) return
         try {
             System.loadLibrary("dexkit")
-        } catch (e: UnsatisfiedLinkError) {
-            logInfo("[WARN] Native load failed. Invoking absolute path extraction.")
-            try {
-                val appInfoMethod =
-                    xposedModule.javaClass.methods.firstOrNull {
-                        it.name == "getApplicationInfo" || it.name == "getModuleApplicationInfo"
-                    }
-                val appInfo = appInfoMethod?.invoke(xposedModule) as? android.content.pm.ApplicationInfo
-
-                if (appInfo != null) {
-                    val libPath = "${appInfo.nativeLibraryDir}/libdexkit.so"
-                    System.load(libPath)
-                    logInfo("[SUCCESS] libdexkit.so injected from absolute path.")
-                } else {
-                    throw UnsatisfiedLinkError("Could not resolve module ApplicationInfo")
+        } catch (_: UnsatisfiedLinkError) {
+            System.load(File(xposedModule.moduleApplicationInfo.nativeLibraryDir, "libdexkit.so").absolutePath)
+        }
+        if (detached || Thread.currentThread().isInterrupted) return
+        val count = attempt {
+            // For split installations use the actual final application loader.
+            // Do not silently narrow a failed/ambiguous loader scan to the base APK.
+            val bridge = if (context.applicationInfo.splitSourceDirs.isNullOrEmpty()) {
+                DexKitBridge.create(context.applicationInfo.sourceDir)
+            } else {
+                DexKitBridge.create(targetClassLoader, true)
+            }
+            bridge.use {
+                if (!detached && !Thread.currentThread().isInterrupted) performSearchSynchronous(it, prefs)
+            }
+        }
+        synchronized(lifecycle) {
+            if (detached || Thread.currentThread().isInterrupted) return
+            val usable = count != null && hasCandidates(prefs) && (count > 0 || mayDeferInstallation)
+            if (usable && key != null) {
+                prefs.edit().putString(DynamicCacheRules.BUILD_KEY, key).apply()
+            } else {
+                prefs.edit().clear().apply()
+            }
+            if (!usable || count == null || count == 0) {
+                logInfo("[DISCOVERY] No confirmed immediate installation; no success notification.")
+                return
+            }
+            logInfo("[DISCOVERY] Registered " + count + " immediate hooks; behavior still requires runtime validation.")
+        }
+        Handler(Looper.getMainLooper()).post {
+            if (!detached) {
+                try {
+                    Toast.makeText(context, successToastMessage, Toast.LENGTH_LONG).show()
+                } catch (t: Throwable) {
+                    logError("[WARN] Unable to display discovery notification.", t)
                 }
-            } catch (e2: Throwable) {
-                logError("[FATAL] Complete failure loading DexKit.", e2)
-                throw e2
             }
-        }
-    }
-
-    private fun performSearchAndCache(
-        context: Context,
-        versionCode: Int,
-        cachePrefs: SharedPreferences,
-    ) {
-        try {
-            loadDexKitSafely()
-        } catch (e: Throwable) {
-            return
-        }
-
-        try {
-            DexKitBridge.create(context.applicationInfo.sourceDir).use { bridge ->
-                performSearchSynchronous(bridge, cachePrefs)
-            }
-            cachePrefs.edit().putInt("app_version", versionCode).apply()
-        } catch (t: Throwable) {
-            logError("[ERROR] DexKit parsing engine encountered an exception", t)
         }
     }
 
     protected abstract fun hasValidCache(cachePrefs: SharedPreferences): Boolean
-
-    protected abstract fun performSearchSynchronous(
-        bridge: DexKitBridge,
-        cachePrefs: SharedPreferences,
-    )
-
-    protected abstract fun applyHooks(
-        classLoader: ClassLoader,
-        cachePrefs: SharedPreferences,
-    )
+    protected abstract fun performSearchSynchronous(bridge: DexKitBridge, cachePrefs: SharedPreferences)
+    protected abstract fun applyHooks(classLoader: ClassLoader, cachePrefs: SharedPreferences)
 }

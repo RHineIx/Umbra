@@ -17,6 +17,7 @@ class GrafikaHook : BaseDynamicHook() {
     override val targetPackages = setOf("org.picquantmedia.grafika")
     override val tag = "UMBRA-GRAFIKA"
     override val prefsCacheName = "umbra_grafika_cache"
+    override val mayDeferInstallation = true
     override val successToastMessage = "Umbra: Grafika optimized & patched. Please restart."
 
     @Volatile private var isUiTweaked = false
