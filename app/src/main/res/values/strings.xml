@@ -63,8 +63,6 @@
     <string name="title_hide_icon">Hide Launcher Icon</string>
     <string name="desc_hide_icon">Remove app icon from app drawer</string>
     <string name="toast_icon_hidden">Icon hidden. Open via LSPosed manager.</string>
-    
-    <string name="toast_settings_saved">Settings Saved</string>
     <string name="toast_settings_failed">Failed to save settings</string>
     <string name="toast_service_disconnected">Xposed service disconnected</string>
     
@@ -87,7 +85,6 @@
     <string name="billing_service_off">Enable Umbra in your Xposed manager before using this feature.</string>
     <string name="billing_verify">Always verify the account and amount in the purchase confirmation. Changes affect new purchase flows.</string>
     <string name="billing_store_unavailable">Google Play Store could not be opened.</string>
-    <string name="billing_saved">Selected account: %1$s</string>
     <string name="billing_version">Play Store version: %1$s</string>
     <string name="billing_missing">The selected account is no longer available. The original Play Store behavior is used.</string>
     <string name="other_hooks_title">Other Hooks</string>

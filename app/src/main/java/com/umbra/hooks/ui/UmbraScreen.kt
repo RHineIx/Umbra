@@ -191,7 +191,7 @@ fun UmbraScreen(
                 onToggle = { otherHooksExpanded = !otherHooksExpanded },
                 tag = "other_hooks",
             ) {
-                val otherHooks = HookRegistry.getHooks().filterNot { it.settingsAvailable }
+                val otherHooks = HookRegistry.getOtherHooks()
                 Column(
                     Modifier.fillMaxWidth(),
                     verticalArrangement = Arrangement.spacedBy(8.dp),

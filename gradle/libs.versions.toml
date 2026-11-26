@@ -2,9 +2,7 @@
 agp = "9.4.1"
 kotlin = "2.4.21"
 coreKtx = "1.19.1"
-appcompat = "1.8.0"
 material = "1.14.0"
-constraintlayout = "2.2.2"
 dexkit = "2.3.0"
 libxposed-api = "102.0.0"
 libxposed-service = "102.0.0"
@@ -18,9 +16,7 @@ kotlin-compose = { id = "org.jetbrains.kotlin.plugin.compose", version.ref = "ko
 android-application = { id = "com.android.application", version.ref = "agp" }
 
 [libraries]
-androidx-appcompat = { group = "androidx.appcompat", name = "appcompat", version.ref = "appcompat" }
 material = { group = "com.google.android.material", name = "material", version.ref = "material" }
-androidx-constraintlayout = { group = "androidx.constraintlayout", name = "constraintlayout", version.ref = "constraintlayout" }
 androidx-compose-bom = { group = "androidx.compose", name = "compose-bom", version.ref = "composeBom" }
 androidx-compose-ui = { group = "androidx.compose.ui", name = "ui" }
 androidx-compose-material3 = { group = "androidx.compose.material3", name = "material3" }
