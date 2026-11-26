@@ -52,13 +52,18 @@ internal class GboardSpacebarHook(private val module: XposedModule, private val 
                 var tint: Int? = null
                 if (active.get() && view != null && canvas != null && view.id != View.NO_ID) {
                     try {
-                        if (isSpacebar(view)) tint = prepareLabels(view)
+                        if (view.width > 0 && view.height > 0 && isSpacebar(view)) tint = prepareLabels(view)
                     } catch (t: Throwable) {
                         fail(t)
                     }
                 }
                 // Always preserve Gboard's original drawing, background, touch and accessibility behavior.
-                val result = chain.proceed()
+                val result = try {
+                    chain.proceed()
+                } catch (t: Throwable) {
+                    if (tint != null) restoreLabels()
+                    throw t
+                }
                 if (active.get() && tint != null && view != null && canvas != null) {
                     try {
                         val bounds = iconBounds(view)

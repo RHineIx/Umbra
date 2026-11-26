@@ -286,14 +286,19 @@ class GboardHook : BaseDynamicHook() {
             registerHook(xposedModule.hook(sizeMethod).intercept { chain ->
                 // Use the original size instead of reflecting into Android's HashSet backing map.
                 val actualSize = chain.proceed() as Int
+                // The framework hook runs for many unrelated collections. Do
+                // not read preferences or traverse large sets on those calls.
+                if (actualSize <= 0 || actualSize > MAX_CLIPBOARD_LIMIT)
+                    return@intercept actualSize
+                val set = chain.thisObject as? HashSet<*> ?: return@intercept actualSize
+                val first = runCatching { set.iterator().let { if (it.hasNext()) it.next() else null } }.getOrNull()
+                if (first?.javaClass?.name != "j$.time.Instant") return@intercept actualSize
                 val reportedSize = clipboardTimestampSize(actualSize, clipboardLimit)
-                // Avoid inspecting unrelated sets when the result cannot change.
+                if (reportedSize == actualSize) return@intercept actualSize
                 // Require a homogeneous timestamp set, not just its first item.
-                val set = chain.thisObject as? HashSet<*>
-                val timestampSet = actualSize > 0 && reportedSize != actualSize &&
-                    set != null && runCatching {
-                        set.all { it?.javaClass?.name == "j$.time.Instant" }
-                    }.getOrDefault(false)
+                val timestampSet = runCatching {
+                    set.all { it?.javaClass?.name == "j$.time.Instant" }
+                }.getOrDefault(false)
                 if (timestampSet) {
                     val logged = if (actualSize > clipboardLimit) overCapacityLogged else withinCapacityLogged
                     if (logsEnabled && logged.compareAndSet(false, true)) {
