@@ -25,6 +25,7 @@ import java.lang.ref.WeakReference
 
 class MainActivity : ComponentActivity() {
     private val viewModel: MainViewModel by viewModels()
+    private var installedVersion = "Unknown"
 
     companion object {
         @Volatile
@@ -52,13 +53,16 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         connectService()
-        val version = runCatching { packageManager.getPackageInfo(packageName, 0).versionName }.getOrNull() ?: "Unknown"
+        installedVersion = runCatching { packageManager.getPackageInfo(packageName, 0).versionName }.getOrNull() ?: "Unknown"
         setContent {
             val state = viewModel.uiState.collectAsStateWithLifecycle().value
             UmbraTheme {
                 UmbraScreen(
                     state = state,
-                    version = version,
+                    version = installedVersion,
+                    onUpdateClick = { update ->
+                        runCatching { startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(update.url))) }
+                    },
                     onLogsChanged = viewModel::toggleLogs,
                     onHideIconChanged = ::toggleLauncherIcon,
                     onDeveloperClick = {
@@ -103,6 +107,7 @@ class MainActivity : ComponentActivity() {
     override fun onResume() {
         super.onResume()
         connectService()
+        viewModel.checkForUpdate(applicationContext)
     }
 
     private fun connectService() {

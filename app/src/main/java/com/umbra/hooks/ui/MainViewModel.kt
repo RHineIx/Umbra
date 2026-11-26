@@ -3,6 +3,11 @@ package com.umbra.hooks.ui
 import android.content.ComponentName
 import android.content.Context
 import android.content.pm.PackageManager
+import android.os.SystemClock
+import com.umbra.hooks.update.AppUpdate
+import com.umbra.hooks.update.UpdateRepository
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.withContext
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.umbra.hooks.utils.Constants
@@ -23,13 +28,29 @@ class MainViewModel : ViewModel() {
         val frameworkVersion: String? = null,
         val frameworkVersionCode: Long? = null,
         val logsEnabled: Boolean = false,
-        val isIconHidden: Boolean = false
+        val isIconHidden: Boolean = false,
+        val availableUpdate: AppUpdate? = null
     )
 
     private val _uiState = MutableStateFlow(UiState())
     val uiState: StateFlow<UiState> = _uiState.asStateFlow()
 
     private var xposedService: XposedService? = null
+    private var updateJob: Job? = null
+    private var nextUpdateCheckAt = 0L
+
+    // Called only by the module's own Activity. No polling or network work in
+    // hooked processes. Throttle repeat resumes and retry failures quietly.
+    fun checkForUpdate(context: Context) {
+        if (updateJob?.isActive == true || SystemClock.elapsedRealtime() < nextUpdateCheckAt) return
+        updateJob = viewModelScope.launch {
+            val result = withContext(Dispatchers.IO) { runCatching { UpdateRepository.check(context.applicationContext) }.getOrNull() }
+            nextUpdateCheckAt = SystemClock.elapsedRealtime() +
+                if (result == null) 60_000L else 6 * 60 * 60 * 1000L
+            if (result != null) _uiState.update { it.copy(availableUpdate = result.update) }
+        }
+    }
+
 
     // Read the current physical state of the launcher icon from the Android system
     fun checkLauncherIconState(context: Context) {

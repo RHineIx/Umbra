@@ -6,6 +6,9 @@
 
     <queries>
         <package android:name="com.android.vending" />
+        <package android:name="ru.iiec.pydroid3" />
+        <package android:name="org.picquantmedia.grafika" />
+        <package android:name="com.michaldrabik.showly2" />
     </queries>
 
     <application
@@ -17,6 +20,15 @@
         android:description="@string/app_description"
         android:supportsRtl="true"
         android:theme="@style/Theme.Umbra">
+
+        <!-- Explicit update requests; OS sender package and UID verified on API 34+. -->
+        <receiver android:name=".update.UpdateRequestReceiver" android:exported="true" />
+
+        <!-- Update clients are authenticated by package and Binder UID. -->
+        <provider
+            android:name=".update.UpdateProvider"
+            android:authorities="com.umbra.hooks.updates"
+            android:exported="true" />
 
         <!-- Calls are authenticated against the Play Store UID inside the provider. -->
         <provider

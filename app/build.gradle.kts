@@ -13,10 +13,10 @@ android {
         targetSdk = 37
         versionCode = project.findProperty("APP_VERSION_CODE")?.toString()?.toInt()
             ?: System.getenv("APP_VERSION_CODE")?.toInt()
-            ?: 30207
+            ?: 30215
         versionName = project.findProperty("APP_VERSION_NAME")?.toString()
             ?: System.getenv("APP_VERSION_NAME")
-            ?: "3.7.1"
+            ?: "3.8.3"
 
         ndk {
             abiFilters.add("arm64-v8a")

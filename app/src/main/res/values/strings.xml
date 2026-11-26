@@ -91,4 +91,5 @@
     <string name="other_hooks_description">Pydroid 3, Grafika and Showly</string>
     <string name="billing_enable_to_choose">Enable Account override to choose an account.</string>
     <string name="billing_status_title">Hook status</string>
+    <string name="update_available">%1$s available</string>
 </resources>
