@@ -3,6 +3,7 @@ on:
   push:
     branches:
       - feature/google-play-account-switcher
+      - feature/google-play-resilience
   workflow_dispatch:
 
 permissions:
