@@ -60,8 +60,6 @@ android {
 
     buildFeatures {
         compose = true
-        viewBinding = false
-        dataBinding = false
     }
 
     packaging {
@@ -82,10 +80,7 @@ android {
 
 dependencies {
     implementation(libs.androidx.core.ktx)
-    // Preserve the original runtime dependencies used by hooks in target apps.
-    implementation(libs.androidx.appcompat)
-    implementation(libs.material)
-    implementation(libs.androidx.constraintlayout)
+    implementation(libs.material) // TabLayout used by Grafika
     implementation(platform(libs.androidx.compose.bom))
     implementation(libs.androidx.compose.ui)
     implementation(libs.androidx.compose.material3)

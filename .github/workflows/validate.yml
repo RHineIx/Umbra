@@ -2,11 +2,8 @@ name: Validate Umbra hooks
 on:
   push:
     branches:
-      - feature/google-play-account-switcher
-      - feature/google-play-resilience
-      - feature/gboard-resilience
-      - feature/core-resilience
-      - feature/runtime-performance
+      - main
+      - 'feature/**'
   workflow_dispatch:
 
 permissions:
@@ -37,13 +34,7 @@ jobs:
       - name: Compile and test debug APK
         run: |
           chmod +x gradlew
-          tasks=(:app:assembleDebug)
-          if [[ -d app/src/test || -d app/src/testDebug ]]; then
-            tasks+=(:app:testDebugUnitTest)
-          else
-            echo '::notice::No debug unit test sources configured.'
-          fi
-          ./gradlew --no-daemon --stacktrace "${tasks[@]}"
+          ./gradlew --no-daemon --stacktrace :app:assembleDebug :app:testDebugUnitTest
       - uses: actions/upload-artifact@v4
         with:
           name: Umbra-debug
