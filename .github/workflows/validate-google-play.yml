@@ -6,6 +6,7 @@ on:
       - feature/google-play-resilience
       - feature/gboard-resilience
       - feature/core-resilience
+      - feature/runtime-performance
   workflow_dispatch:
 
 permissions:
