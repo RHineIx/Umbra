@@ -9,7 +9,7 @@ import org.luckypray.dexkit.result.MethodData
 import org.luckypray.dexkit.result.FieldUsingType
 import java.io.File
 import java.lang.reflect.Modifier
-import java.security.MessageDigest
+import com.umbra.hooks.core.ApkDigest
 
 /** Offline semantic discovery with exact installed APK identity and versioned cache. */
 internal object GooglePlayDiscovery {
@@ -19,18 +19,7 @@ internal object GooglePlayDiscovery {
 
     data class Identity(val code: Long, val name: String?, val baseHash: String, val key: String)
 
-    private fun sha256(path: String): String {
-        val digest=MessageDigest.getInstance("SHA-256")
-        File(path).inputStream().buffered().use { input ->
-            val buffer=ByteArray(65536)
-            while (true) {
-                val count=input.read(buffer)
-                if (count < 0) break
-                digest.update(buffer,0,count)
-            }
-        }
-        return digest.digest().joinToString("") { "%02x".format(java.util.Locale.ROOT,it.toInt() and 255) }
-    }
+    private fun sha256(path: String): String = ApkDigest.sha256(File(path))
 
     @JvmStatic fun identity(context: Context): Identity? = runCatching {
         val info=context.packageManager.getPackageInfo(STORE,0)

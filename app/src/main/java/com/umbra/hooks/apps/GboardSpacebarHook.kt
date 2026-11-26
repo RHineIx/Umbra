@@ -19,6 +19,7 @@ import com.umbra.hooks.utils.SpacebarIconRenderer
 import io.github.libxposed.api.XposedInterface
 import io.github.libxposed.api.XposedModule
 import java.util.WeakHashMap
+import java.lang.ref.WeakReference
 import java.util.concurrent.atomic.AtomicBoolean
 
 /** Optional visual feature; independent of clipboard discovery, flags and retention. */
@@ -28,6 +29,10 @@ internal class GboardSpacebarHook(private val module: XposedModule, private val 
     private val missing = AtomicBoolean(false)
     private val unsupported = AtomicBoolean(false)
     private val resourceIds = WeakHashMap<Resources, Int>()
+    private class ResourceMatch(resources: Resources, val id: Int) {
+        val resource = WeakReference(resources)
+    }
+    @Volatile private var recentResource: ResourceMatch? = null
     private val hiddenLabels = WeakHashMap<View, Float>()
 
     fun install(): XposedInterface.HookHandle? {
@@ -91,10 +96,12 @@ internal class GboardSpacebarHook(private val module: XposedModule, private val 
     }
 
     private fun isSpacebar(view: View): Boolean {
-        val id = synchronized(resourceIds) {
-            resourceIds.getOrPut(view.resources) {
-                view.resources.getIdentifier("key_pos_space", "id", "com.google.android.inputmethod.latin")
-            }
+        val resources = view.resources
+        val recent = recentResource
+        val id = if (recent != null && recent.resource.get() === resources) recent.id else synchronized(resourceIds) {
+            resourceIds.getOrPut(resources) {
+                resources.getIdentifier("key_pos_space", "id", "com.google.android.inputmethod.latin")
+            }.also { recentResource = ResourceMatch(resources, it) }
         }
         if (id == 0 && missing.compareAndSet(false, true)) {
             log("[WARN] key_pos_space is unavailable in this resource set; leaving its views unchanged.")
@@ -146,11 +153,16 @@ internal class GboardSpacebarHook(private val module: XposedModule, private val 
         val top = maxOf(view.paddingTop, optical?.top ?: 0).coerceIn(0, view.height).toFloat()
         val right = (view.width - maxOf(view.paddingRight, optical?.right ?: 0)).coerceIn(0, view.width).toFloat()
         val bottom = (view.height - maxOf(view.paddingBottom, optical?.bottom ?: 0)).coerceIn(0, view.height).toFloat()
-        val content = if (right > left && bottom > top) RectF(left, top, right, bottom)
-            else RectF(0f, 0f, view.width.toFloat(), view.height.toFloat())
-        val size = minOf(22f * view.resources.displayMetrics.density, content.width(), content.height())
-        return RectF(content.centerX() - size / 2f, content.centerY() - size / 2f,
-            content.centerX() + size / 2f, content.centerY() + size / 2f)
+        val valid = right > left && bottom > top
+        val x1 = if (valid) left else 0f
+        val y1 = if (valid) top else 0f
+        val x2 = if (valid) right else view.width.toFloat()
+        val y2 = if (valid) bottom else view.height.toFloat()
+        val size = minOf(22f * view.resources.displayMetrics.density, x2 - x1, y2 - y1)
+        val centerX = (x1 + x2) * .5f
+        val centerY = (y1 + y2) * .5f
+        return RectF(centerX - size / 2f, centerY - size / 2f,
+            centerX + size / 2f, centerY + size / 2f)
     }
 
     private fun restoreLabels() {

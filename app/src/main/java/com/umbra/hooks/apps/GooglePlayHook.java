@@ -32,6 +32,7 @@ public final class GooglePlayHook {
     private final XposedModule module;
     private final List<XposedInterface.HookHandle> handles = new CopyOnWriteArrayList<>();
     private volatile Context context;
+    private volatile String storeVersion;
     private volatile Object accountSource;
     private volatile boolean ready;
     private volatile boolean checkoutReady;
@@ -76,6 +77,7 @@ public final class GooglePlayHook {
         accountSource = null;
         accountListMethod = null;
         context = null;
+        storeVersion = null;
     }
 
     /**
@@ -86,6 +88,13 @@ public final class GooglePlayHook {
         if (ready || detached || loader == null || discoveryAttempted) return;
         discoveryAttempted = true;
         GooglePlayDiscovery.Identity id = GooglePlayDiscovery.identity(ctx);
+        // Package identity is fixed for this process. Only version metadata is
+        // cached; selected account and account membership are checked on every call.
+        storeVersion = id == null ? null : id.getName();
+        if (storeVersion == null) {
+            try { storeVersion = ctx.getPackageManager().getPackageInfo(PACKAGE, 0).versionName; }
+            catch (Throwable ignored) {}
+        }
         GooglePlayRules.Mapping reviewed = GooglePlayDiscovery.reviewed(id);
         if (reviewed != null && installMapping(loader, reviewed)) {
             module.log(Log.INFO, TAG, "Exact reviewed build mapping installed");
@@ -229,8 +238,8 @@ public final class GooglePlayHook {
             Bundle data = new Bundle();
             data.putStringArrayList("accounts", new ArrayList<>(accounts.keySet()));
             data.putString("status", ready ? "ready" : "unsupported");
-            try { data.putString("version", c.getPackageManager().getPackageInfo(PACKAGE, 0).versionName); }
-            catch (Throwable ignored) {}
+            String version = storeVersion;
+            if (version != null) data.putString("version", version);
             Bundle reply = c.getContentResolver().call(BRIDGE, "sync", null, data);
             if (!ready || reply == null) return null;
             // Never synthesize an account or trust an email absent from this process.

@@ -35,17 +35,19 @@ class BillingAccountProvider : ContentProvider() {
             throw SecurityException("Only Google Play Store may use this bridge")
         }
         val prefs = prefs(ctx)
-        val names = extras?.getStringArrayList(ACCOUNTS)
-            ?.filter { it.isNotBlank() && it.length <= 320 }?.distinct()?.take(128)?.toSet()
-        val editor = prefs.edit()
-        if (names != null && names != prefs.getStringSet(ACCOUNTS, emptySet())) editor.putStringSet(ACCOUNTS, names)
+        val names = BillingReportRules.normalizeNames(extras?.getStringArrayList(ACCOUNTS))
+        // Do not allocate or apply an editor when the authenticated report
+        // is unchanged. Selection is still read from preferences on every call.
+        var editor: SharedPreferences.Editor? = null
+        fun changes(): SharedPreferences.Editor = editor ?: prefs.edit().also { editor = it }
+        if (names != null && names != prefs.getStringSet(ACCOUNTS, emptySet())) changes().putStringSet(ACCOUNTS, names)
         extras?.getString(STATUS)?.takeIf { it == "ready" || it == "unsupported" }?.let {
-            if (it != prefs.getString(STATUS, null)) editor.putString(STATUS, it)
+            if (it != prefs.getString(STATUS, null)) changes().putString(STATUS, it)
         }
         extras?.getString(VERSION)?.take(100)?.let {
-            if (it != prefs.getString(VERSION, null)) editor.putString(VERSION, it)
+            if (it != prefs.getString(VERSION, null)) changes().putString(VERSION, it)
         }
-        editor.apply()
+        editor?.apply()
         val selected = prefs.getString(SELECTED, null)
         return Bundle().apply {
             // An account must be present in the current authenticated account report.

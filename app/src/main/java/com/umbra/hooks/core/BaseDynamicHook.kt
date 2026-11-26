@@ -183,6 +183,12 @@ abstract class BaseDynamicHook : AppHook {
                     logError("[ERROR] Background discovery failed.", t)
                 } finally {
                     executor.shutdown()
+                    synchronized(lifecycle) {
+                        if (worker === executor) {
+                            worker = null
+                            task = null
+                        }
+                    }
                 }
             }
         }

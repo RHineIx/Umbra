@@ -221,7 +221,7 @@ class GboardHook : BaseDynamicHook() {
                 if (!dynamicReady.get()) return@intercept chain.proceed()
                 val instance = chain.thisObject
                 val flag = if (instance == null) null else runCatching {
-                    GboardRules.flagName(fields.map { it.get(instance) })
+                    GboardRules.flagName(fields.size) { index -> fields[index].get(instance) }
                 }.getOrNull()
                 if (flag != null) false else chain.proceed()
             })

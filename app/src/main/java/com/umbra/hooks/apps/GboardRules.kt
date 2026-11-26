@@ -1,7 +1,7 @@
 package com.umbra.hooks.apps
 
 import java.io.File
-import java.security.MessageDigest
+import com.umbra.hooks.core.ApkDigest
 
 /** Pure helpers: no Android, DexKit or hooked application code required. */
 internal object GboardRules {
@@ -13,27 +13,36 @@ internal object GboardRules {
 
     // Accept only an exact known flag identity, never a substring or arbitrary toString().
     // Two matching fields are ambiguous even if they contain the same value.
-    fun flagName(values: Iterable<Any?>): String? =
-        values.mapNotNull { value ->
-            when (value) {
-                is String -> value
-                is Enum<*> -> value.name
-                else -> null
-            }?.takeIf { it in flags }
-        }.singleOrNull()
+    private fun knownFlag(value: Any?): String? =
+        when (value) {
+            is String -> value
+            is Enum<*> -> value.name
+            else -> null
+        }?.takeIf { it in flags }
 
-    fun sha256(file: File): String {
-        val digest = MessageDigest.getInstance("SHA-256")
-        file.inputStream().buffered().use { input ->
-            val buffer = ByteArray(65536)
-            while (true) {
-                val count = input.read(buffer)
-                if (count < 0) break
-                digest.update(buffer, 0, count)
-            }
+    fun flagName(values: Iterable<Any?>): String? {
+        var match: String? = null
+        for (value in values) {
+            val name = knownFlag(value) ?: continue
+            if (match != null) return null
+            match = name
         }
-        return digest.digest().joinToString("") { "%02x".format(java.util.Locale.ROOT, it.toInt() and 255) }
+        return match
     }
+
+    // Read reflection fields directly; do not allocate an intermediate list
+    // for every flag read. A second match makes further reads unnecessary.
+    fun flagName(count: Int, valueAt: (Int) -> Any?): String? {
+        var match: String? = null
+        for (index in 0 until count) {
+            val name = knownFlag(valueAt(index)) ?: continue
+            if (match != null) return null
+            match = name
+        }
+        return match
+    }
+
+    fun sha256(file: File): String = ApkDigest.sha256(file)
 
     fun buildKey(code: Long, name: String?, updated: Long, baseHash: String, splitHashes: List<String>): String =
         listOf(SCHEMA.toString(), code.toString(), name.orEmpty(), updated.toString(),
@@ -56,10 +65,17 @@ internal object GboardRules {
         if (selection != null && selectionArgs != null &&
             selection.none { it == '\'' || it == '"' || it == '\u0060' } &&
             "--" !in selection && "/*" !in selection && "[" !in selection) {
-            val marker = timestampFilter.findAll(selection).toList().singleOrNull()
-            if (marker != null) {
-                val index = selection.take(marker.range.first).count { it == '?' }
-                if (index in selectionArgs.indices && selection.count { it == '?' } == selectionArgs.size &&
+            val marker = timestampFilter.find(selection)
+            if (marker != null && marker.next() == null) {
+                var index = 0
+                var total = 0
+                for (position in selection.indices) {
+                    if (selection[position] == '?') {
+                        total++
+                        if (position < marker.range.first) index++
+                    }
+                }
+                if (index in selectionArgs.indices && total == selectionArgs.size &&
                     selectionArgs.all { it == null || it is String }) {
                     val updated = Array(selectionArgs.size) { selectionArgs[it] as? String }
                     updated[index] = (now - retentionMillis).toString()
