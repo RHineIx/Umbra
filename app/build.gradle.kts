@@ -103,6 +103,7 @@ dependencies {
     compileOnly(libs.libxposed.api)
     implementation(libs.libxposed.service)
     implementation(libs.dexkit)
+    testImplementation("junit:junit:4.13.2")
 }
 
 // ACS_SIGNING_CONFIG_START

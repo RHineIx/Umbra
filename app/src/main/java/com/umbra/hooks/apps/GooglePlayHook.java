@@ -34,6 +34,8 @@ public final class GooglePlayHook {
     private volatile Context context;
     private volatile Object accountSource;
     private volatile boolean ready;
+    private volatile boolean checkoutReady;
+    private final ThreadLocal<Boolean> publishing = new ThreadLocal<>();
     private volatile boolean detached;
     private volatile Method accountListMethod;
     private boolean discoveryAttempted;
@@ -66,6 +68,7 @@ public final class GooglePlayHook {
     public synchronized void detachAll() {
         detached = true;
         ready = false;
+        checkoutReady = false;
         for (XposedInterface.HookHandle h : handles) {
             try { h.unhook(); } catch (Throwable ignored) {}
         }
@@ -82,43 +85,46 @@ public final class GooglePlayHook {
     private synchronized void install(ClassLoader loader, Context ctx) {
         if (ready || detached || loader == null || discoveryAttempted) return;
         discoveryAttempted = true;
-        String cached = GooglePlayDiscovery.cached(ctx);
-        if (cached != null && installPrimary(loader, cached)) {
-            module.log(Log.INFO, TAG, "Validated version cache: " + cached);
-            finishInstall(loader, ctx, cached);
+        GooglePlayDiscovery.Identity id = GooglePlayDiscovery.identity(ctx);
+        GooglePlayRules.Mapping reviewed = GooglePlayDiscovery.reviewed(id);
+        if (reviewed != null && installMapping(loader, reviewed)) {
+            module.log(Log.INFO, TAG, "Exact reviewed build mapping installed");
+            return;
+        }
+        GooglePlayRules.Mapping cached = GooglePlayDiscovery.cached(ctx, id);
+        if (cached != null && installMapping(loader, cached)) {
+            module.log(Log.INFO, TAG, "Validated exact-build cached mapping installed");
             return;
         }
         GooglePlayDiscovery.clear(ctx);
-        String discovered = GooglePlayDiscovery.discover(module, loader, ctx);
-        if (discovered != null && installPrimary(loader, discovered)) {
-            finishInstall(loader, ctx, discovered);
-            GooglePlayDiscovery.remember(ctx, discovered);
+        GooglePlayRules.Mapping discovered = GooglePlayDiscovery.discover(module, loader, ctx);
+        if (discovered != null && installMapping(loader, discovered)) {
+            // Cache only complete, successfully installed mappings.
+            GooglePlayDiscovery.remember(ctx, id, discovered);
             return;
         }
-        // Explicitly reviewed mapping for the supplied APK; never apply it
-        // to a different version just because an obfuscated name exists.
-        if (GooglePlayDiscovery.isReviewedVersion(ctx) && !"ppr".equals(discovered)
-                && installPrimary(loader, "ppr")) {
-            finishInstall(loader, ctx, "ppr");
-            GooglePlayDiscovery.remember(ctx, "ppr");
-            return;
-        }
-        if (!"poc".equals(discovered) && installPrimary(loader, "poc")) {
-            finishInstall(loader, ctx, "poc");
-            GooglePlayDiscovery.remember(ctx, "poc");
-            return;
-        }
-        module.log(Log.WARN, TAG, "No validated account mapping; original behavior retained");
+        module.log(Log.WARN, TAG, "No complete validated mapping; original behavior retained");
     }
 
-    private boolean installPrimary(ClassLoader loader, String className) {
+    private boolean installMapping(ClassLoader loader, GooglePlayRules.Mapping mapping) {
+        // Fail closed for incomplete checkout paths. Account selection must not
+        // silently claim success when the checkout route is missing.
+        if (mapping.getCheckout() == null) return false;
+        GooglePlayRules.Primary p = mapping.getPrimary();
+        GooglePlayRules.Checkout checkout = mapping.getCheckout();
         int initial = handles.size();
         try {
-            Class<?> source = Class.forName(className, false, loader);
-            Method a = find(source, "a", String.class);
-            Method b = find(source, "b");
-            Method f = find(source, "f");
-            Method i = find(source, "i");
+            Class<?> source = Class.forName(p.getOwner(), false, loader);
+            Method a = source.getDeclaredMethod(p.getLookup(), String.class);
+            Method b = source.getDeclaredMethod(p.getCurrent());
+            Method f = source.getDeclaredMethod(p.getName());
+            Method i = source.getDeclaredMethod(p.getList());
+            for (Method m : new Method[]{a,b,f,i}) {
+                if (java.lang.reflect.Modifier.isAbstract(m.getModifiers()) ||
+                        java.lang.reflect.Modifier.isNative(m.getModifiers()))
+                    throw new NoSuchMethodException("Non-concrete primary method");
+                m.setAccessible(true);
+            }
             if (a.getReturnType() != Account.class || b.getReturnType() != Account.class
                     || f.getReturnType() != String.class
                     || !List.class.isAssignableFrom(i.getReturnType())
@@ -130,7 +136,7 @@ public final class GooglePlayHook {
             }
             boolean accountManagerField = false;
             for (Field field : source.getDeclaredFields()) {
-                if (field.getType() == AccountManager.class) accountManagerField = true;
+                if (field.getType() == AccountManager.class && !java.lang.reflect.Modifier.isStatic(field.getModifiers())) accountManagerField = true;
             }
             if (!accountManagerField) throw new NoSuchFieldException("AccountManager");
             accountListMethod = i;
@@ -146,8 +152,10 @@ public final class GooglePlayHook {
                 Account selected = selected(chain.getThisObject());
                 return selected == null ? chain.proceed() : selected.name;
             });
+            installCheckout(loader, checkout);
+            checkoutReady = true;
             ready = true;
-            module.log(Log.INFO, TAG, "Validated primary account hooks: " + className);
+            module.log(Log.INFO, TAG, "Validated primary and checkout hooks installed");
             return true;
         } catch (Throwable failure) {
             while (handles.size() > initial) {
@@ -156,42 +164,27 @@ public final class GooglePlayHook {
             }
             accountListMethod = null;
             ready = false;
-            diagnostic("Primary mapping " + className, failure);
+            checkoutReady = false;
+            diagnostic("Mapping installation", failure);
             return false;
         }
     }
 
-    private void finishInstall(ClassLoader loader, Context ctx, String mapping) {
-        if ("poc".equals(mapping)) {
-            installCheckout(loader);
-        } else if ("ppr".equals(mapping) && GooglePlayDiscovery.isReviewedVersion(ctx)) {
-            installReviewedCheckout(loader);
-        } else {
-            module.log(Log.INFO, TAG, "Primary mapping only; secondary checkout not validated for this version");
-        }
-    }
-
-    /** Secondary model identified in the supplied build by its billing-account Bundle key. */
-    private void installReviewedCheckout(ClassLoader loader) {
-        try {
-            Class<?> model = Class.forName("tar", false, loader);
-            Field billing = field(model, "c");
-            if (billing.getType() != String.class) throw new NoSuchFieldException("Checkout model");
-            Constructor<?> ctor = model.getDeclaredConstructor(Context.class, Bundle.class);
-            add(ctor, chain -> {
-                Object result = chain.proceed();
-                try {
-                    Account choice = selected(null);
-                    if (choice != null) billing.set(chain.getThisObject(), choice.name);
-                } catch (Throwable ignored) {}
-                return result;
-            });
-            module.log(Log.INFO, TAG, "Reviewed checkout model hook installed");
-        } catch (Throwable failure) {
-            diagnostic("Reviewed checkout model", failure);
-        }
-        // The saved-state route is not used to rewrite an in-progress purchase.
-        // A new purchase flow must be opened after changing the selected account.
+    private void installCheckout(ClassLoader loader, GooglePlayRules.Checkout mapping) throws Throwable {
+        Class<?> model = Class.forName(mapping.getOwner(), false, loader);
+        Field billing = model.getDeclaredField(mapping.getField());
+        if (billing.getType() != String.class || java.lang.reflect.Modifier.isStatic(billing.getModifiers()))
+            throw new NoSuchFieldException("Checkout model");
+        billing.setAccessible(true);
+        Constructor<?> ctor = model.getDeclaredConstructor(Context.class, Bundle.class);
+        add(ctor, chain -> {
+            Object result = chain.proceed();
+            try {
+                Account choice = selected(null);
+                if (choice != null) billing.set(chain.getThisObject(), choice.name);
+            } catch (Throwable ignored) {}
+            return result;
+        });
     }
 
     private void diagnostic(String stage, Throwable failure) {
@@ -199,76 +192,8 @@ public final class GooglePlayHook {
         module.log(Log.WARN, TAG, stage + ": " + failure.getClass().getSimpleName());
     }
 
-    private void installCheckout(ClassLoader loader) {
-        try {
-            Class<?> wfm = Class.forName("wfm", false, loader);
-            Class<?> tbj = Class.forName("tbj", false, loader);
-            Class<?> tct = Class.forName("tct", false, loader);
-            Class<?> optional;
-            try { optional = Class.forName("j$.util.Optional", false, loader); }
-            catch (ClassNotFoundException e) { optional = java.util.Optional.class; }
-            Method method = find(wfm, "b", tbj, optional, Context.class, boolean.class);
-            Field account = field(tct, "a");
-            if (account.getType() == Account.class && tct.isAssignableFrom(method.getReturnType())) {
-                add(method, chain -> {
-                    Object result = chain.proceed();
-                    try {
-                        Account choice = selected(null);
-                        if (choice != null && tct.isInstance(result)) account.set(result, choice);
-                    } catch (Throwable ignored) {}
-                    return result;
-                });
-            }
-        } catch (Throwable ignored) {}
-
-        try {
-            Class<?> szf = Class.forName("szf", false, loader);
-            Field billing = field(szf, "c");
-            if (billing.getType() == String.class) {
-                Constructor<?> ctor = szf.getDeclaredConstructor(Context.class, Bundle.class);
-                add(ctor, chain -> {
-                    Object result = chain.proceed();
-                    try {
-                        Account choice = selected(null);
-                        if (choice != null) billing.set(chain.getThisObject(), choice.name);
-                    } catch (Throwable ignored) {}
-                    return result;
-                });
-                try {
-                    Class<?> sky = Class.forName("sky", false, loader);
-                    Field owner = field(sky, "a");
-                    if (szf.isAssignableFrom(owner.getType())) {
-                        add(find(sky, "accept", Object.class), chain -> {
-                            Object result = chain.proceed();
-                            try {
-                                Account choice = selected(null);
-                                Object model = owner.get(chain.getThisObject());
-                                if (choice != null && szf.isInstance(model)) billing.set(model, choice.name);
-                            } catch (Throwable ignored) {}
-                            return result;
-                        });
-                    }
-                } catch (Throwable ignored) {}
-            }
-        } catch (Throwable ignored) {}
-
-        try {
-            Class<?> sxk = Class.forName("sxk", false, loader);
-            add(find(sxk, "onSaveInstanceState", Bundle.class), chain -> {
-                Object result = chain.proceed();
-                try {
-                    Account choice = selected(null);
-                    if (choice != null && chain.getArg(0) instanceof Bundle) {
-                        ((Bundle) chain.getArg(0)).putString("BillingAccountModel.billingAccountName", choice.name);
-                    }
-                } catch (Throwable ignored) {}
-                return result;
-            });
-        } catch (Throwable ignored) {}
-    }
-
     private Account selected(Object source) {
-        if (!ready || detached) return null;
+        if (!ready || !checkoutReady || detached || Boolean.TRUE.equals(publishing.get())) return null;
         Account choice = publish(source);
         if (choice != null && overrideObserved.compareAndSet(false, true)) {
             module.log(Log.INFO, TAG, "Selected account returned to a hooked route (identity omitted)");
@@ -278,7 +203,8 @@ public final class GooglePlayHook {
 
     private Account publish(Object source) {
         Context c = context;
-        if (c == null || detached) return null;
+        if (c == null || detached || Boolean.TRUE.equals(publishing.get())) return null;
+        publishing.set(true);
         try {
             if (source != null) accountSource = source;
             Map<String, Account> accounts = new LinkedHashMap<>();
@@ -311,22 +237,9 @@ public final class GooglePlayHook {
             return accounts.get(reply.getString("selected"));
         } catch (Throwable ignored) {
             return null;
+        } finally {
+            publishing.remove();
         }
     }
 
-    private static Method find(Class<?> type, String name, Class<?>... args) throws NoSuchMethodException {
-        for (Class<?> c = type; c != null; c = c.getSuperclass()) {
-            try { Method m = c.getDeclaredMethod(name, args); m.setAccessible(true); return m; }
-            catch (NoSuchMethodException ignored) {}
-        }
-        throw new NoSuchMethodException(name);
-    }
-
-    private static Field field(Class<?> type, String name) throws NoSuchFieldException {
-        for (Class<?> c = type; c != null; c = c.getSuperclass()) {
-            try { Field f = c.getDeclaredField(name); f.setAccessible(true); return f; }
-            catch (NoSuchFieldException ignored) {}
-        }
-        throw new NoSuchFieldException(name);
-    }
 }

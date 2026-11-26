@@ -5,81 +5,121 @@ import android.os.Build
 import android.util.Log
 import io.github.libxposed.api.XposedModule
 import org.luckypray.dexkit.DexKitBridge
+import org.luckypray.dexkit.result.MethodData
+import org.luckypray.dexkit.result.FieldUsingType
 import java.io.File
+import java.lang.reflect.Modifier
+import java.security.MessageDigest
 
-/** Semantic discovery of the account manager, without logging account data. */
+/** Offline semantic discovery with exact installed APK identity and versioned cache. */
 internal object GooglePlayDiscovery {
     private const val TAG = "UMBRA-PLAY"
     private const val STORE = "com.android.vending"
-    private const val REVIEWED = "54.4.11-34 [0] [PR] 1025789771"
     private const val CACHE = "umbra_play_mapping"
-    private const val SCHEMA = 1
 
-    private fun versionKey(context: Context): String? = runCatching {
-        val info = context.packageManager.getPackageInfo(STORE, 0)
+    data class Identity(val code: Long, val name: String?, val baseHash: String, val key: String)
+
+    private fun sha256(path: String): String {
+        val digest=MessageDigest.getInstance("SHA-256")
+        File(path).inputStream().buffered().use { input ->
+            val buffer=ByteArray(65536)
+            while (true) {
+                val count=input.read(buffer)
+                if (count < 0) break
+                digest.update(buffer,0,count)
+            }
+        }
+        return digest.digest().joinToString("") { "%02x".format(java.util.Locale.ROOT,it.toInt() and 255) }
+    }
+
+    @JvmStatic fun identity(context: Context): Identity? = runCatching {
+        val info=context.packageManager.getPackageInfo(STORE,0)
         @Suppress("DEPRECATION")
-        val code = if (Build.VERSION.SDK_INT >= 28) info.longVersionCode else info.versionCode.toLong()
-        "$SCHEMA:$code:${info.versionName}:${info.lastUpdateTime}"
+        val code=if (Build.VERSION.SDK_INT >= 28) info.longVersionCode else info.versionCode.toLong()
+        val base=sha256(context.applicationInfo.sourceDir)
+        val splits=context.applicationInfo.splitSourceDirs.orEmpty().sorted().map { sha256(it) }.sorted()
+        val key=listOf(GooglePlayRules.SCHEMA.toString(),code.toString(),info.versionName.orEmpty(),
+            info.lastUpdateTime.toString(),base,splits.joinToString(",")).joinToString(":")
+        Identity(code,info.versionName,base,key)
     }.getOrNull()
 
-    @JvmStatic fun isReviewedVersion(context: Context): Boolean =
-        runCatching { context.packageManager.getPackageInfo(STORE, 0).versionName == REVIEWED }.getOrDefault(false)
+    @JvmStatic fun reviewed(id: Identity?): GooglePlayRules.Mapping? =
+        id?.let { GooglePlayRules.reviewed(it.code,it.name,it.baseHash) }
 
-    @JvmStatic fun cached(context: Context): String? {
-        val key = versionKey(context) ?: return null
-        val prefs = context.getSharedPreferences(CACHE, Context.MODE_PRIVATE)
-        return prefs.getString("mapping", null)?.takeIf { prefs.getString("version", null) == key }
+    @JvmStatic fun cached(context: Context, id: Identity?): GooglePlayRules.Mapping? {
+        if (id == null) return null
+        val prefs=context.getSharedPreferences(CACHE,Context.MODE_PRIVATE)
+        if (prefs.getString("version",null) != id.key) return null
+        return GooglePlayRules.decode(prefs.getString("mapping",null))
     }
 
     @JvmStatic fun clear(context: Context) {
-        context.getSharedPreferences(CACHE, Context.MODE_PRIVATE).edit().clear().apply()
+        context.getSharedPreferences(CACHE,Context.MODE_PRIVATE).edit().clear().apply()
     }
 
-    @JvmStatic fun remember(context: Context, mapping: String) {
-        val key = versionKey(context) ?: return
-        context.getSharedPreferences(CACHE, Context.MODE_PRIVATE).edit()
-            .putString("version", key).putString("mapping", mapping).apply()
+    @JvmStatic fun remember(context: Context, id: Identity?, mapping: GooglePlayRules.Mapping) {
+        if (id == null) return
+        context.getSharedPreferences(CACHE,Context.MODE_PRIVATE).edit()
+            .putString("version",id.key).putString("mapping",GooglePlayRules.encode(mapping)).apply()
     }
 
-    @JvmStatic fun discover(module: XposedModule, loader: ClassLoader, context: Context): String? {
+    @JvmStatic fun discover(module: XposedModule, loader: ClassLoader, context: Context): GooglePlayRules.Mapping? {
         return try {
             try {
                 System.loadLibrary("dexkit")
             } catch (_: UnsatisfiedLinkError) {
-                System.load(File(module.moduleApplicationInfo.nativeLibraryDir, "libdexkit.so").absolutePath)
+                System.load(File(module.moduleApplicationInfo.nativeLibraryDir,"libdexkit.so").absolutePath)
             }
-            // First scan the base APK (all eight DEX files in the reviewed build).
-            // Only scan the loader if the base does not contain both semantic anchors.
-            val result = DexKitBridge.create(context.applicationInfo.sourceDir).use { scan(it) }
-                ?: DexKitBridge.create(loader, true).use { scan(it) }
-            module.log(Log.INFO, TAG, if (result == null) "DexKit: no unique validated anchor pair"
-                else "DexKit account manager candidate: $result")
+            // When split APKs exist, search the full loader. Never replace an
+            // ambiguous loader result with a narrower base-only result.
+            val result=if (context.applicationInfo.splitSourceDirs.isNullOrEmpty()) {
+                DexKitBridge.create(context.applicationInfo.sourceDir).use { scan(it) }
+            } else {
+                DexKitBridge.create(loader,true).use { scan(it) }
+            }
+            module.log(Log.INFO,TAG,if (result == null) "DexKit: no unique semantic primary mapping"
+                else "DexKit: unique primary; checkout candidate=" + (result.checkout != null))
             result
         } catch (failure: Throwable) {
-            module.log(Log.WARN, TAG, "DexKit discovery failed: ${failure.javaClass.simpleName}")
+            module.log(Log.WARN,TAG,"DexKit discovery failed: " + failure.javaClass.simpleName)
             null
         }
     }
 
-    private fun scan(bridge: DexKitBridge): String? {
-        val current = bridge.findMethod {
-            matcher {
-                usingStrings("is not valid, selecting first available account:")
-                returnType("android.accounts.Account")
+    private fun instance(m: MethodData) = m.isMethod && !Modifier.isStatic(m.modifiers) &&
+        !Modifier.isAbstract(m.modifiers) && !Modifier.isNative(m.modifiers)
+
+    private fun scan(bridge: DexKitBridge): GooglePlayRules.Mapping? {
+        val current=bridge.findMethod {
+            matcher { usingStrings(GooglePlayRules.CURRENT); returnType(GooglePlayRules.ACCOUNT) }
+        }.filter { instance(it) && it.paramTypeNames.isEmpty() }
+        val list=bridge.findMethod {
+            matcher { usingStrings(GooglePlayRules.CACHE_A); returnType(GooglePlayRules.LIST) }
+        }.filter { instance(it) && it.paramTypeNames.isEmpty() }
+        val owners=current.map { it.className }.toSet().intersect(list.map { it.className }.toSet())
+        val evidence=owners.mapNotNull { owner ->
+            val cls=current.first { it.className == owner }.declaredClass ?: return@mapNotNull null
+            val methods=cls.methods.filter { m ->
+                instance(m) && ((m.paramTypeNames.isEmpty() && m.returnTypeName in
+                    listOf(GooglePlayRules.ACCOUNT,GooglePlayRules.LIST,GooglePlayRules.STRING)) ||
+                    (m.paramTypeNames == listOf(GooglePlayRules.STRING) && m.returnTypeName == GooglePlayRules.ACCOUNT))
+            }.map { m -> GooglePlayRules.MethodEvidence(m.className,m.name,m.descriptor,m.paramTypeNames,
+                m.returnTypeName,m.usingStrings.toSet(),m.invokes.map { it.descriptor }.toSet()) }
+            GooglePlayRules.OwnerEvidence(owner,cls.fields.any {
+                it.typeName == GooglePlayRules.MANAGER && !Modifier.isStatic(it.modifiers)
+            },methods)
+        }
+        val primary=GooglePlayRules.primary(evidence) ?: return null
+        val constructors=bridge.findMethod {
+            matcher { usingStrings(GooglePlayRules.BILLING); returnType("void") }
+        }.filter { it.isConstructor && it.paramTypeNames == listOf("android.content.Context","android.os.Bundle") }
+            .map { m ->
+                GooglePlayRules.CheckoutEvidence(m.className,m.descriptor,m.usingStrings.toSet(),
+                    m.invokes.map { it.descriptor }.toSet(),m.usingFields.filter {
+                        it.usingType == FieldUsingType.Write && it.field.className == m.className &&
+                            it.field.typeName == GooglePlayRules.STRING && !Modifier.isStatic(it.field.modifiers)
+                    }.map { it.field.name })
             }
-        }.map { it.toDexMethod() }
-            .filter { it.name == "b" && it.paramTypeNames.isEmpty() }
-            .map { it.className }.toSet()
-        val lists = bridge.findMethod {
-            matcher {
-                usingStrings("Lazy initialization of accounts cache", "Accounts cache should not be null after initialization")
-                returnType("java.util.List")
-            }
-        }.map { it.toDexMethod() }
-            .filter { it.name == "i" && it.paramTypeNames.isEmpty() }
-            .map { it.className }.toSet()
-        // Require independent anchor matches in the same single class.
-        // Reflection in GooglePlayHook then checks the entire signature family.
-        return current.intersect(lists).singleOrNull()
+        return GooglePlayRules.Mapping(primary,GooglePlayRules.checkout(constructors))
     }
 }

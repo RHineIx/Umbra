@@ -82,7 +82,7 @@
     <string name="billing_reset">Reset to default</string>
     <string name="billing_empty">No accounts reported yet. Enable the Play Store scope, force-stop the store once, then open it and return here.</string>
     <string name="billing_pending">No hook report yet.</string>
-    <string name="billing_ready">Last reported: account hooks detected</string>
+    <string name="billing_ready">Last reported: account and checkout hooks detected</string>
     <string name="billing_unsupported">Last reported: unsupported Play Store build</string>
     <string name="billing_service_off">Enable Umbra in your Xposed manager before using this feature.</string>
     <string name="billing_verify">Always verify the account and amount in the purchase confirmation. Changes affect new purchase flows.</string>
