@@ -8,6 +8,8 @@ import com.umbra.hooks.apps.GrafikaHook
 import com.umbra.hooks.apps.PydroidHook
 import com.umbra.hooks.apps.ShowlyHook
 import com.umbra.hooks.core.AppHook
+import com.umbra.hooks.update.InjectedUpdateHook
+import com.umbra.hooks.update.UpdateProvider
 import com.umbra.hooks.utils.Constants
 import com.umbra.hooks.utils.PrefsManager
 import io.github.libxposed.api.XposedModule
@@ -32,6 +34,7 @@ class MainHook : XposedModule() {
     private val lifecycleLock = Any()
     private val activeHooks = mutableMapOf<String, AppHook>()
     private var retired = false
+    private val updateDialogs = mutableMapOf<String, InjectedUpdateHook>()
 
     override fun onPackageLoaded(param: XposedModuleInterface.PackageLoadedParam) {
         super.onPackageLoaded(param)
@@ -46,6 +49,11 @@ class MainHook : XposedModule() {
 
         synchronized(lifecycleLock) {
             if (retired || activeHooks.containsKey(packageName)) return
+            if (packageName in UpdateProvider.TARGETS && packageName !in updateDialogs) {
+                runCatching { InjectedUpdateHook(this, packageName).also { it.install() } }
+                    .onSuccess { updateDialogs[packageName] = it }
+                    .onFailure { log(Log.ERROR, "UMBRA-UPDATE", "[$packageName] Lifecycle hook installation failed", it) }
+            }
             var hook: AppHook? = null
             try {
                 val instance = factory()
@@ -94,6 +102,8 @@ class MainHook : XposedModule() {
             googlePlayHook = null
             activeHooks.values.forEach { runCatching { it.detachAll() } }
             activeHooks.clear()
+            updateDialogs.values.forEach { runCatching { it.detach() } }
+            updateDialogs.clear()
         }
 
         return true // Confirm and allow the hot reload process

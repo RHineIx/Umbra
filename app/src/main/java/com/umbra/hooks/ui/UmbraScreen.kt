@@ -13,6 +13,7 @@ import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
@@ -42,6 +43,8 @@ import kotlin.math.roundToInt
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.toArgb
+import androidx.compose.ui.graphics.luminance
+import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.StrokeCap
@@ -63,6 +66,7 @@ import androidx.compose.ui.unit.dp
 import com.umbra.hooks.R
 import com.umbra.hooks.utils.SpacebarIcon
 import com.umbra.hooks.utils.SpacebarSettings
+import com.umbra.hooks.update.AppUpdate
 
 @Composable
 fun UmbraScreen(
@@ -75,8 +79,17 @@ fun UmbraScreen(
     saveClipboardSettings: (Int, Int) -> Boolean,
     readSpacebarSettings: () -> SpacebarSettings? = { null },
     saveSpacebarSettings: (SpacebarSettings) -> Boolean = { false },
+    onUpdateClick: (AppUpdate) -> Unit = {},
 ) {
     var expanded by rememberSaveable { mutableStateOf(false) }
+    var lastAutoExpandedTag by rememberSaveable { mutableStateOf<String?>(null) }
+    val update = state.availableUpdate
+    LaunchedEffect(update?.tag) {
+        if (update != null && lastAutoExpandedTag != update.tag) {
+            lastAutoExpandedTag = update.tag
+            expanded = true
+        }
+    }
     var gboardExpanded by rememberSaveable { mutableStateOf(false) }
     var playExpanded by rememberSaveable { mutableStateOf(false) }
     var otherHooksExpanded by rememberSaveable { mutableStateOf(false) }
@@ -127,7 +140,7 @@ fun UmbraScreen(
                 Text(stringResource(R.string.title_lsposed_module), style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
-            StatusCard(state, version, expanded, progress, { expanded = !expanded }, onDeveloperClick)
+            StatusCard(state, version, expanded, progress, { expanded = !expanded }, onDeveloperClick, onUpdateClick)
             if (expanded || fraction > 0f) {
                 RevealHeight(progress, slideFromBehind = true,
                     modifier = Modifier.testTag("module_settings").graphicsLayer { alpha = .3f + .7f * progress() }) {
@@ -216,6 +229,7 @@ private fun StatusCard(
     progress: () -> Float,
     onClick: () -> Unit,
     onDeveloperClick: () -> Unit,
+    onUpdateClick: (AppUpdate) -> Unit,
 ) {
     val colors = MaterialTheme.colorScheme
     val activeFraction by animateFloatAsState(
@@ -224,7 +238,11 @@ private fun StatusCard(
         label = "status activation",
     )
     val evaluator = remember { ArgbEvaluator() }
-    val background = Color(evaluator.evaluate(activeFraction, colors.errorContainer.toArgb(), colors.primaryContainer.toArgb()) as Int)
+    val darkTheme = isSystemInDarkTheme()
+    // Soften only the light status containers using the current Material You palette.
+    val inactiveContainer = if (darkTheme) colors.errorContainer else lerp(colors.errorContainer, colors.surface, .60f)
+    val activeContainer = if (darkTheme) colors.primaryContainer else lerp(colors.primaryContainer, colors.surface, .60f)
+    val background = Color(evaluator.evaluate(activeFraction, inactiveContainer.toArgb(), activeContainer.toArgb()) as Int)
     val foreground = Color(evaluator.evaluate(activeFraction, colors.onErrorContainer.toArgb(), colors.onPrimaryContainer.toArgb()) as Int)
     val expansionLabel = stringResource(if (expanded) R.string.status_expanded else R.string.status_collapsed)
     Card(
@@ -252,8 +270,41 @@ private fun StatusCard(
                             Text(stringResource(R.string.developer_info),
                                 modifier = Modifier.clickable(role = Role.Button, onClick = onDeveloperClick),
                                 style = MaterialTheme.typography.bodySmall)
-                            Text(stringResource(R.string.app_version_format, version), Modifier.padding(top = 4.dp),
-                                style = MaterialTheme.typography.bodySmall)
+                            val update = state.availableUpdate
+                            if (update == null) {
+                                Text(stringResource(R.string.app_version_format, version), Modifier.padding(top = 4.dp),
+                                    style = MaterialTheme.typography.bodySmall)
+                            } else {
+                                // Keep the original details layout and use its existing
+                                // reveal animation. Wrap gracefully on narrow screens.
+                                val updateColor = if (background.luminance() > .35f)
+                                    Color(0xFF166534) else Color(0xFF86EFAC)
+                                FlowRow(
+                                    modifier = Modifier.padding(top = 4.dp).testTag("update_version"),
+                                    horizontalArrangement = Arrangement.spacedBy(4.dp),
+                                    verticalArrangement = Arrangement.Center,
+                                ) {
+                                    Text(stringResource(R.string.app_version_format, version),
+                                        style = MaterialTheme.typography.bodySmall)
+                                    Row(
+                                        modifier = Modifier.clickable(role = Role.Button) { onUpdateClick(update) },
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(4.dp),
+                                    ) {
+                                        Text("→", style = MaterialTheme.typography.bodySmall)
+                                        Text(stringResource(R.string.update_available, update.tag),
+                                            color = updateColor,
+                                            style = MaterialTheme.typography.bodySmall,
+                                            fontWeight = FontWeight.Medium)
+                                        Icon(
+                                            painter = painterResource(R.drawable.ic_update_link),
+                                            contentDescription = null,
+                                            tint = updateColor,
+                                            modifier = Modifier.size(14.dp),
+                                        )
+                                    }
+                                }
+                            }
                         }
                     }
                 }
@@ -264,7 +315,7 @@ private fun StatusCard(
                 Box(Modifier.align(Alignment.BottomEnd).offset(x = 24.dp, y = 24.dp)
                     .wrapContentSize(Alignment.BottomEnd, unbounded = true)) {
                     StatusWatermark(state.isServiceActive, foreground,
-                        Modifier.requiredSize(100.dp).testTag("status_watermark").alpha(.6f))
+                        Modifier.requiredSize(100.dp).testTag("status_watermark").alpha(if (darkTheme) .6f else .35f))
                 }
             }
         }
